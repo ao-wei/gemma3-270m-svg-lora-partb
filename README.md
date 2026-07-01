@@ -7,7 +7,7 @@ visual prompt**. Each target SVG was produced by Claude Sonnet from that prompt.
 
 | File | Rows | Contents |
 |---|---|---|
-| `train.jsonl` | 138 | training pairs |
+| `train.jsonl` | 219 | training pairs |
 | `valid.jsonl` | 17 | validation pairs |
 
 Each line is one chat-format example:
@@ -24,8 +24,11 @@ Each line is one chat-format example:
 - **Target** = one complete `<svg …>…</svg>` document (`assistant`), `viewBox="0 0 256 256"`.
 - Train loss should be masked to the assistant (SVG) tokens only.
 
-## Notes
+## Provenance
 
-- These are **detailed-prompt → Sonnet-SVG** pairs only. Raw-query augmentation rows
-  and the held-out **test set are intentionally excluded** (the test set is kept
-  private for grading).
+- Built from 275 generated records. After dropping incompletes and repairing
+  malformed SVGs (unbalanced `<g>`, duplicate `</svg>`), **253** valid
+  detailed-prompt → Sonnet-SVG pairs remained; **17** are held out as a private
+  test set (not included here), leaving **236** published.
+- Raw-query augmentation rows are intentionally excluded — these are
+  **detailed-prompt** pairs only.
