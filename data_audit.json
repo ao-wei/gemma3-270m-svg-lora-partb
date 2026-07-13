@@ -1,0 +1,20 @@
+{
+  "train_rows": 219,
+  "valid_rows": 17,
+  "unique_train_prompts": 218,
+  "unique_valid_prompts": 17,
+  "prompt_overlap": 0,
+  "uninformative_train_rows": [
+    79,
+    123
+  ],
+  "usable_train_rows": 217,
+  "invalid_target_xml": [],
+  "viewboxes": [
+    "0 0 256 256"
+  ],
+  "sha256": {
+    "train.jsonl": "b8c90a46a0292bdfac3e0a9800f30bd8ceeacad05f0e3fab5a9de91ec84d8d18",
+    "valid.jsonl": "43f66b004843b91691d72c2949fb9dbf075408288d9a0a2a81a2337062bfce31"
+  }
+}

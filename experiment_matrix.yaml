@@ -1,0 +1,73 @@
+screening_defaults:
+  max_train_samples: 110
+  epochs: 1
+  eval_steps: 14
+  seed: 42
+  simplify_targets: false
+  shortest_first: false
+experiments:
+  - name: e00_default
+    lora_r: 8
+    learning_rate: 0.0002
+    max_length: 2048
+  - name: e01_rank4
+    lora_r: 4
+    learning_rate: 0.0002
+    max_length: 2048
+  - name: e02_rank16
+    lora_r: 16
+    learning_rate: 0.0002
+    max_length: 2048
+  - name: e03_lr1e4
+    lora_r: 8
+    learning_rate: 0.0001
+    max_length: 2048
+  - name: e04_lr5e4
+    lora_r: 8
+    learning_rate: 0.0005
+    max_length: 2048
+  - name: e05_length3072
+    lora_r: 8
+    learning_rate: 0.0002
+    max_length: 3072
+  - name: e06_full_early
+    max_train_samples: null
+    epochs: 4
+    eval_steps: 25
+    lora_r: 4
+    learning_rate: 0.0005
+    max_length: 2048
+  - name: e07_seed123
+    max_train_samples: null
+    epochs: 1
+    eval_steps: 25
+    seed: 123
+    lora_r: 4
+    learning_rate: 0.0005
+    max_length: 2048
+  - name: e08_short_curriculum
+    max_train_samples: 110
+    epochs: 3
+    eval_steps: 25
+    shortest_first: true
+    lora_r: 4
+    learning_rate: 0.0002
+    max_length: 1536
+  - name: e09_simplified_targets
+    max_train_samples: null
+    epochs: 3
+    eval_steps: 25
+    simplify_targets: true
+    max_visible_elements: 6
+    lora_r: 4
+    learning_rate: 0.0002
+    max_length: 1536
+  - name: e10_three_elements
+    max_train_samples: null
+    epochs: 2
+    eval_steps: 25
+    simplify_targets: true
+    max_visible_elements: 3
+    lora_r: 4
+    learning_rate: 0.0002
+    max_length: 1024

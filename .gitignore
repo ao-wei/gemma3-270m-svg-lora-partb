@@ -1,1 +1,10 @@
 .DS_Store
+.venv/
+gemma3-270m-it/
+runs/
+tmp/
+__pycache__/
+*.pyc
+.pytest_cache/
+output/rendered/
+学生任务手册_PartB_中文.pdf

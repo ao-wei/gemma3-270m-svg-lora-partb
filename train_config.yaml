@@ -1,0 +1,35 @@
+model_path: gemma3-270m-it
+train_file: train.jsonl
+output_dir: runs/final
+seed: 42
+dev_size: 22
+max_train_samples: null
+drop_uninformative_prompts: true
+simplify_targets: true
+max_visible_elements: 3
+
+max_length: 1024
+eval_max_length: 1536
+precision: auto
+batch_size: 1
+gradient_accumulation_steps: 8
+gradient_checkpointing: true
+num_train_epochs: 2
+learning_rate: 0.0002
+weight_decay: 0.01
+warmup_ratio: 0.05
+lr_scheduler_type: cosine
+max_grad_norm: 1.0
+logging_steps: 5
+eval_steps: 25
+early_stopping: true
+early_stopping_patience: 1
+
+lora_r: 4
+lora_alpha: 16
+lora_dropout: 0.05
+target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
