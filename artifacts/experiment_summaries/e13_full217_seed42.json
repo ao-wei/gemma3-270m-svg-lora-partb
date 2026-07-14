@@ -1,0 +1,82 @@
+{
+  "config": {
+    "model_path": "gemma3-270m-it",
+    "train_file": "train.jsonl",
+    "output_dir": "runs/e13_full217_seed42",
+    "init_adapter_path": "adapter_curriculum_stage1",
+    "seed": 42,
+    "dev_size": 0,
+    "max_train_samples": null,
+    "drop_uninformative_prompts": true,
+    "simplify_targets": false,
+    "require_no_truncation": true,
+    "max_length": 3584,
+    "eval_max_length": 3584,
+    "precision": "auto",
+    "auto_precision_fallback": true,
+    "batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "gradient_checkpointing": true,
+    "loss_chunk_size": 256,
+    "num_train_epochs": 1,
+    "learning_rate": 5e-05,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.05,
+    "lr_scheduler_type": "cosine",
+    "max_grad_norm": 1.0,
+    "logging_steps": 5,
+    "eval_steps": 25,
+    "save_steps": 25,
+    "early_stopping": false,
+    "early_stopping_patience": 1,
+    "lora_r": 4,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj"
+    ]
+  },
+  "device": "mps",
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "torch_version": "2.13.0",
+  "transformers_version": "4.57.6",
+  "train_rows": 217,
+  "dev_rows": 0,
+  "rejected_source_rows": [
+    79,
+    123
+  ],
+  "trainable_parameters": 368640,
+  "total_parameters": 268466816,
+  "trainable_fraction": 0.0013731305995002376,
+  "elapsed_seconds": 788.7098503112793,
+  "precision_attempts": [
+    {
+      "precision": "bf16",
+      "status": "success"
+    }
+  ],
+  "sequence_lengths": {
+    "max_observed": 3535,
+    "max_length": 3584,
+    "truncated_rows": 0
+  },
+  "peak_memory": {
+    "mps_current_allocated_bytes": 634798080,
+    "mps_driver_allocated_bytes": 4124426240,
+    "mps_recommended_max_bytes": 12713115648,
+    "cuda_max_allocated_bytes": null
+  },
+  "train_metrics": {
+    "train_runtime": 788.2738,
+    "train_samples_per_second": 0.275,
+    "train_steps_per_second": 0.036,
+    "total_flos": 175054034448384.0,
+    "train_loss": 8.462599618094307,
+    "epoch": 1.0
+  },
+  "eval_metrics": {}
+}

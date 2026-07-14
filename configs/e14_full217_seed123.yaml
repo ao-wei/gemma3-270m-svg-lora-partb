@@ -1,8 +1,8 @@
 model_path: gemma3-270m-it
 train_file: train.jsonl
-output_dir: runs/e13_full217_seed42
+output_dir: runs/e14_full217_seed123
 init_adapter_path: adapter_curriculum_stage1
-seed: 42
+seed: 123
 dev_size: 0
 max_train_samples: null
 drop_uninformative_prompts: true

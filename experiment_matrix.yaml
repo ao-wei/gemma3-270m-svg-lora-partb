@@ -71,3 +71,15 @@ experiments:
     lora_r: 4
     learning_rate: 0.0002
     max_length: 1024
+  - name: e11_fullsvg_lr5e5
+    config: configs/e11_fullsvg_lr5e5.yaml
+    role: internal_dev_candidate
+  - name: e12_fullsvg_lr1e4
+    config: configs/e12_fullsvg_lr1e4.yaml
+    role: internal_dev_candidate
+  - name: e13_full217_seed42
+    config: configs/e13_full217_seed42.yaml
+    role: predeclared_primary
+  - name: e14_full217_seed123
+    config: configs/e14_full217_seed123.yaml
+    role: robustness_only

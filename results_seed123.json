@@ -9,7 +9,7 @@
   },
   "model": {
     "base_path": "gemma3-270m-it",
-    "adapter_path": "adapter"
+    "adapter_path": "adapter_seed123"
   },
   "decoding": {
     "do_sample": false,
@@ -20,7 +20,7 @@
       1,
       106
     ],
-    "base_outputs_reused_from": null
+    "base_outputs_reused_from": "results.json"
   },
   "counts": {
     "validation_samples": 17
@@ -52,26 +52,26 @@
     },
     "tuned": {
       "total": {
-        "mean": 0.36375,
+        "mean": 0.34316176470588233,
         "median": 0.35,
-        "min": 0.35,
+        "min": 0.0,
         "max": 0.58375
       },
       "validity": {
-        "mean": 0.7539366470588235,
+        "mean": 0.7045248823529411,
         "median": 0.74,
-        "min": 0.74,
+        "min": 0.0,
         "max": 0.876923
       },
       "fidelity": {
-        "mean": 0.06214988235294118,
+        "mean": 0.03825282352941177,
         "median": 0.0,
         "min": 0.0,
-        "max": 0.40625
+        "max": 0.125
       },
-      "fatal_rate": 0.0,
+      "fatal_rate": 0.058823529411764705,
       "pass_rate": 0.0,
-      "valid_pass_rate": 0.11764705882352941,
+      "valid_pass_rate": 0.058823529411764705,
       "quality_pass_rate": 0.0
     }
   },
@@ -628,8 +628,8 @@
         }
       },
       "tuned": {
-        "raw_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#FFD3E3\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#FFD3E3\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#FFD3E3\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#FFD3E3\" /></svg>",
-        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#FFD3E3\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#FFD3E3\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#FFD3E3\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#FFD3E3\" /></svg>",
+        "raw_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#f0f0f0\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#f0f0f0\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#f0f0f0\" /></svg>",
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#f0f0f0\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#f0f0f0\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#f0f0f0\" /></svg>",
         "reward": {
           "reward_version": "3.0",
           "total": 0.35,
@@ -662,7 +662,7 @@
             "meaningful_foreground_elements": 0,
             "duplicate_visible_elements": 2,
             "colors": [
-              "#ffd3e3"
+              "#f0f0f0"
             ],
             "tag_counts": {
               "rect": 1,
@@ -675,7 +675,7 @@
               "yellow"
             ],
             "svg_colors": [
-              "#ffd3e3"
+              "#f0f0f0"
             ],
             "color_coverage": 0.0,
             "requested_primitive_terms": [
@@ -966,18 +966,18 @@
         }
       },
       "tuned": {
-        "raw_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#F4A83B\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#F4A83B\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#F4A83B\" /></svg>",
-        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#F4A83B\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#F4A83B\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#F4A83B\" /></svg>",
+        "raw_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#F4A83B\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#F4A83B\" /><line x=\"-128.5\" y=\"-128.5\" x=\"-128.5\" y=\"128.5\" /><line x=\"-128.5\" y=\"128.5\" x=\"-128.5\" y=\"128.5\" /></svg>",
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#F4A83B\" /><circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"#F4A83B\" /><line x=\"-128.5\" y=\"-128.5\" x=\"-128.5\" y=\"128.5\" /><line x=\"-128.5\" y=\"128.5\" x=\"-128.5\" y=\"128.5\" /></svg>",
         "reward": {
           "reward_version": "3.0",
-          "total": 0.35,
-          "validity": 0.84,
-          "fidelity": 0.40625,
+          "total": 0.0,
+          "validity": 0.0,
+          "fidelity": 0.0,
           "components": {
-            "syntax_safety": 1.0,
-            "geometry": 0.6,
+            "syntax_safety": 0.0,
+            "geometry": 0.0,
             "structure_style": 0.0,
-            "prompt_fidelity": 0.40625,
+            "prompt_fidelity": 0.0,
             "anti_degeneracy": 0.0
           },
           "weights": {
@@ -988,50 +988,19 @@
             "anti_degeneracy": 0.1
           },
           "violations": [
-            "background_only_or_blank",
-            "many_coordinates_outside_viewbox",
-            "repeated_identical_elements"
+            "xml_parse_error"
           ],
           "metadata": {
-            "visible_elements": 3,
-            "on_canvas_elements": 2,
-            "canvas_cover_elements": 2,
-            "meaningful_foreground_elements": 0,
-            "duplicate_visible_elements": 1,
-            "colors": [
-              "#f4a83b"
-            ],
-            "tag_counts": {
-              "rect": 1,
-              "circle": 2
-            },
-            "prompt_colors": [
-              "#2b2b2b",
-              "#d64541",
-              "#f4a83b",
-              "orange",
-              "red",
-              "white"
-            ],
-            "svg_colors": [
-              "#f4a83b"
-            ],
-            "color_coverage": 0.166667,
-            "requested_primitive_terms": [
-              "circular",
-              "ring"
-            ],
-            "shape_coverage": 1.0,
-            "composition": 0.0,
-            "spatial_requests": [],
-            "spatial_scorable": 0,
-            "spatial_hits": 0,
-            "spatial_coverage": null,
-            "fatal": false
+            "visible_elements": 0,
+            "colors": [],
+            "prompt_colors": [],
+            "color_coverage": 0.0,
+            "shape_coverage": 0.0,
+            "fatal": true
           }
         },
         "passes": {
-          "valid": true,
+          "valid": false,
           "quality": false
         }
       }
@@ -1700,8 +1669,8 @@
         }
       },
       "tuned": {
-        "raw_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /></svg>",
-        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /></svg>",
+        "raw_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /></svg>",
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /></svg>",
         "reward": {
           "reward_version": "3.0",
           "total": 0.35,
@@ -1734,7 +1703,7 @@
             "meaningful_foreground_elements": 0,
             "duplicate_visible_elements": 2,
             "colors": [
-              "#f6f6f6"
+              "#f0f0f0"
             ],
             "tag_counts": {
               "rect": 3
@@ -1746,7 +1715,7 @@
               "navy"
             ],
             "svg_colors": [
-              "#f6f6f6"
+              "#f0f0f0"
             ],
             "color_coverage": 0.0,
             "requested_primitive_terms": [
@@ -1858,8 +1827,8 @@
         }
       },
       "tuned": {
-        "raw_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /></svg>",
-        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /></svg>",
+        "raw_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /></svg>",
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /></svg>",
         "reward": {
           "reward_version": "3.0",
           "total": 0.35,
@@ -1892,7 +1861,7 @@
             "meaningful_foreground_elements": 0,
             "duplicate_visible_elements": 2,
             "colors": [
-              "#f0f0f0"
+              "#f6f6f6"
             ],
             "tag_counts": {
               "rect": 3
@@ -1904,7 +1873,7 @@
               "white"
             ],
             "svg_colors": [
-              "#f0f0f0"
+              "#f6f6f6"
             ],
             "color_coverage": 0.0,
             "requested_primitive_terms": [
@@ -2108,8 +2077,8 @@
         }
       },
       "tuned": {
-        "raw_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /></svg>",
-        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f6f6f6\" /></svg>",
+        "raw_text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /></svg>",
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\"><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /><rect x=\"-128\" y=\"-128\" width=\"128\" height=\"128\" fill=\"#f0f0f0\" /></svg>",
         "reward": {
           "reward_version": "3.0",
           "total": 0.35,
@@ -2142,7 +2111,7 @@
             "meaningful_foreground_elements": 0,
             "duplicate_visible_elements": 2,
             "colors": [
-              "#f6f6f6"
+              "#f0f0f0"
             ],
             "tag_counts": {
               "rect": 3
@@ -2152,7 +2121,7 @@
               "teal"
             ],
             "svg_colors": [
-              "#f6f6f6"
+              "#f0f0f0"
             ],
             "color_coverage": 0.0,
             "requested_primitive_terms": [
@@ -2176,52 +2145,52 @@
       }
     }
   ],
-  "elapsed_seconds": 333.87380194664,
+  "elapsed_seconds": 49.31840491294861,
   "comparison": {
     "total": {
-      "paired_mean_delta": 0.3402205882352941,
+      "paired_mean_delta": 0.3196323529411765,
       "bootstrap_95_ci": [
-        0.3088235294117647,
-        0.37948529411764703
+        0.2647058823529412,
+        0.3716176470588235
       ],
-      "improved": 17,
-      "unchanged": 0,
+      "improved": 16,
+      "unchanged": 1,
       "worsened": 0
     },
     "validity": {
-      "paired_mean_delta": 0.6851583529411764,
+      "paired_mean_delta": 0.6357465882352941,
       "bootstrap_95_ci": [
-        0.6145610676470589,
-        0.747511294117647
+        0.5251583529411765,
+        0.7245248823529411
       ],
-      "improved": 17,
-      "unchanged": 0,
+      "improved": 16,
+      "unchanged": 1,
       "worsened": 0
     },
     "fidelity": {
-      "paired_mean_delta": 0.011267529411764706,
+      "paired_mean_delta": -0.012629529411764706,
       "bootstrap_95_ci": [
-        -0.06313140294117646,
-        0.08643530147058807
+        -0.07413153382352941,
+        0.04003170294117647
       ],
-      "improved": 7,
-      "unchanged": 7,
+      "improved": 6,
+      "unchanged": 8,
       "worsened": 3
     }
   },
   "verification": {
     "fresh_process_adapter_load": true,
     "results_schema_v2_valid": true,
-    "repro_sample_count": 17,
-    "repro_structure_match": true,
-    "deterministic_base_matches": 17,
-    "deterministic_tuned_matches": 17,
-    "deterministic_all_34_outputs": true,
+    "repro_sample_count": null,
+    "repro_structure_match": null,
+    "deterministic_base_matches": null,
+    "deterministic_tuned_matches": null,
+    "deterministic_all_34_outputs": null,
     "unit_tests_passed": true,
     "unit_test_count": 27,
     "adapter_sha256": {
-      "adapter_config.json": "1fed28c077c142a00c4de7e70dd6a1491cd7150d066db03c0ac5621cd2f80d8e",
-      "adapter_model.safetensors": "1ceedb3bfa3278a26e862b02b1933516a78c40586e8136c25dc78e9397cb64b5"
+      "adapter_config.json": "e8fba352c1edf2cb32575d4ba559cec94459172e18a30c324c52669206ef2d3c",
+      "adapter_model.safetensors": "d44c7fb6373ef5e693fad667f97e3526413640a43c5ffeca379ef339e6fd8c7b"
     },
     "data_sha256": {
       "train.jsonl": "b8c90a46a0292bdfac3e0a9800f30bd8ceeacad05f0e3fab5a9de91ec84d8d18",

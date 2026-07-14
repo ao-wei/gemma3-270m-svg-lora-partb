@@ -10,9 +10,10 @@ import sys
 import time
 from pathlib import Path
 
-from common import device_name, set_seed, write_json
+from common import device_name, read_json, set_seed, write_json
 from data import load_jsonl
 from reward import reward
+from result_schema import add_passes, summarize
 
 
 def parse_args():
@@ -24,6 +25,10 @@ def parse_args():
     parser.add_argument("--max-new-tokens", type=int, default=2048)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--reuse-base-from",
+        help="Reuse base raw outputs from a compatible prior result; tuned generation is still rerun.",
+    )
     return parser.parse_args()
 
 
@@ -70,22 +75,6 @@ def generate(model, tokenizer, rows, device, max_new_tokens):
     return outputs
 
 
-def summarize(samples, key):
-    import statistics
-
-    summary = {}
-    for metric in ("total", "validity", "fidelity"):
-        values = [sample[key]["reward"][metric] for sample in samples]
-        summary[metric] = {
-            "mean": sum(values) / len(values),
-            "median": statistics.median(values),
-            "min": min(values),
-            "max": max(values),
-        }
-    summary["fatal_rate"] = sum(sample[key]["reward"]["metadata"]["fatal"] for sample in samples) / len(samples)
-    return summary
-
-
 def main() -> None:
     args = parse_args()
     import peft
@@ -107,7 +96,21 @@ def main() -> None:
         args.model, local_files_only=True, dtype=dtype, low_cpu_mem_usage=True
     ).to(device)
     started = time.time()
-    base_outputs = generate(base_model, tokenizer, rows, device, args.max_new_tokens)
+    if args.reuse_base_from:
+        prior = read_json(args.reuse_base_from)
+        if prior.get("decoding", {}).get("max_new_tokens") != args.max_new_tokens:
+            raise ValueError("reused base result has different max_new_tokens")
+        if len(prior.get("samples", [])) != len(rows):
+            raise ValueError("reused base result has different sample count")
+        for row, sample in zip(rows, prior["samples"]):
+            if row["messages"][1]["content"] != sample.get("prompt"):
+                raise ValueError("reused base result prompt/order mismatch")
+        base_outputs = [
+            {"raw_text": sample["base"]["raw_text"], "svg": sample["base"]["svg"]}
+            for sample in prior["samples"]
+        ]
+    else:
+        base_outputs = generate(base_model, tokenizer, rows, device, args.max_new_tokens)
     adapter_path = Path(args.adapter)
     if not (adapter_path / "adapter_config.json").exists():
         raise FileNotFoundError(f"adapter not found: {adapter_path}")
@@ -121,11 +124,11 @@ def main() -> None:
             "id": index,
             "prompt": prompt,
             "reference_svg": row["messages"][2]["content"],
-            "base": {**base_output, "reward": reward(prompt, base_output["raw_text"])},
-            "tuned": {**tuned_output, "reward": reward(prompt, tuned_output["raw_text"])},
+            "base": add_passes({**base_output, "reward": reward(prompt, base_output["raw_text"])}),
+            "tuned": add_passes({**tuned_output, "reward": reward(prompt, tuned_output["raw_text"])}),
         })
     result = {
-        "schema_version": 1,
+        "schema_version": 2,
         "environment": {
             "device": device,
             "platform": platform.platform(),
@@ -140,6 +143,7 @@ def main() -> None:
             "max_new_tokens": args.max_new_tokens,
             "seed": args.seed,
             "eos_token_ids": get_eos_token_ids(tokenizer),
+            "base_outputs_reused_from": args.reuse_base_from,
         },
         "counts": {"validation_samples": len(samples)},
         "summary": {"base": summarize(samples, "base"), "tuned": summarize(samples, "tuned")},

@@ -7,4 +7,5 @@ __pycache__/
 *.pyc
 .pytest_cache/
 output/rendered/
+output/rendered_final/
 学生任务手册_PartB_中文.pdf

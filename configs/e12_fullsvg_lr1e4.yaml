@@ -1,9 +1,9 @@
 model_path: gemma3-270m-it
 train_file: train.jsonl
-output_dir: runs/e13_full217_seed42
+output_dir: runs/e12_fullsvg_lr1e4
 init_adapter_path: adapter_curriculum_stage1
 seed: 42
-dev_size: 0
+dev_size: 22
 max_train_samples: null
 drop_uninformative_prompts: true
 simplify_targets: false
@@ -17,7 +17,7 @@ gradient_accumulation_steps: 8
 gradient_checkpointing: true
 loss_chunk_size: 256
 num_train_epochs: 1
-learning_rate: 5.0e-05
+learning_rate: 0.0001
 weight_decay: 0.01
 warmup_ratio: 0.05
 lr_scheduler_type: cosine
@@ -25,13 +25,9 @@ max_grad_norm: 1.0
 logging_steps: 5
 eval_steps: 25
 save_steps: 25
-early_stopping: false
+early_stopping: true
 early_stopping_patience: 1
 lora_r: 4
 lora_alpha: 16
 lora_dropout: 0.05
-target_modules:
-- q_proj
-- k_proj
-- v_proj
-- o_proj
+target_modules: [q_proj, k_proj, v_proj, o_proj]

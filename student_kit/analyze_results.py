@@ -9,6 +9,7 @@ import random
 from pathlib import Path
 
 from reward import reward
+from result_schema import add_passes, summarize
 
 
 def percentile(values, probability):
@@ -26,22 +27,6 @@ def paired_bootstrap(deltas, seed=42, iterations=10_000):
     return [percentile(means, 0.025), percentile(means, 0.975)]
 
 
-def summarize(samples, key):
-    import statistics
-
-    summary = {}
-    for metric in ("total", "validity", "fidelity"):
-        values = [sample[key]["reward"][metric] for sample in samples]
-        summary[metric] = {
-            "mean": sum(values) / len(values),
-            "median": statistics.median(values),
-            "min": min(values),
-            "max": max(values),
-        }
-    summary["fatal_rate"] = sum(sample[key]["reward"]["metadata"]["fatal"] for sample in samples) / len(samples)
-    return summary
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("results", nargs="?", default="results.json")
@@ -52,8 +37,9 @@ def main():
     data = json.loads(path.read_text(encoding="utf-8"))
     for sample in data["samples"]:
         prompt = sample["prompt"]
-        sample["base"]["reward"] = reward(prompt, sample["base"]["raw_text"])
-        sample["tuned"]["reward"] = reward(prompt, sample["tuned"]["raw_text"])
+        sample["base"] = add_passes({**sample["base"], "reward": reward(prompt, sample["base"]["raw_text"])})
+        sample["tuned"] = add_passes({**sample["tuned"], "reward": reward(prompt, sample["tuned"]["raw_text"])})
+    data["schema_version"] = 2
     data["summary"] = {
         "base": summarize(data["samples"], "base"),
         "tuned": summarize(data["samples"], "tuned"),

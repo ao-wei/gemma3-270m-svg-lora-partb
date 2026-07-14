@@ -1,175 +1,131 @@
 #!/usr/bin/env python3
-"""Build the Chinese Markdown and PDF assignment reports from real results."""
+"""Build the final Chinese Markdown and PDF report from audited artifacts."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import shutil
 from datetime import date
 from pathlib import Path
 
+import yaml
 
-def fmt(value, digits=4):
+
+def read_json(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def f(value, digits=4):
     return f"{value:.{digits}f}"
 
 
-def load_experiments(runs_dir: Path):
+def experiment_rows():
+    names = [
+        ("E10 stage1", "artifacts/experiment_summaries/e10_stage1.json", "3 visible elements", "internal warm start"),
+        ("E11", "artifacts/experiment_summaries/e11_fullsvg_lr5e5.json", "full SVG, lr=5e-5", "dev candidate"),
+        ("E12", "artifacts/experiment_summaries/e12_fullsvg_lr1e4.json", "full SVG, lr=1e-4", "dev candidate"),
+        ("E13", "artifacts/experiment_summaries/e13_full217_seed42.json", "full SVG, seed=42", "primary"),
+        ("E14", "artifacts/experiment_summaries/e14_full217_seed123.json", "full SVG, seed=123", "robustness"),
+    ]
     rows = []
-    names = {
-        "e00_default": "E0 default", "e01_rank4": "E1 r=4", "e02_rank16": "E2 r=16",
-        "e03_lr1e4": "E3 lr=1e-4", "e04_lr5e4": "E4 lr=5e-4",
-        "e05_length3072": "E5 len=3072", "e06_full_early_final": "E6 full-4ep",
-        "e07_seed123_final": "E7 seed=123", "e08_short_curriculum": "E8 shortest-110",
-        "e09_simplified_targets": "E9 six-elements", "e10_three_elements": "E10 final-3elem",
-    }
-    for path in sorted(runs_dir.glob("*/training_summary.json")):
-        if path.parent.name not in names:
-            continue
-        data = json.loads(path.read_text(encoding="utf-8"))
-        config = data["config"]
+    for name, path, target, role in names:
+        data = read_json(path)
+        peak_bytes = data.get("peak_memory", {}).get("mps_driver_allocated_bytes")
+        peak = None if peak_bytes is None else peak_bytes / (1024 ** 3)
         rows.append({
-            "name": names[path.parent.name],
-            "r": config["lora_r"],
-            "lr": config["learning_rate"],
-            "length": config["max_length"],
-            "samples": data["train_rows"],
-            "epochs": config["num_train_epochs"],
+            "name": name, "target": target, "role": role,
+            "rows": data["train_rows"], "dev": data["dev_rows"],
+            "lr": data["config"]["learning_rate"], "length": data["config"]["max_length"],
             "eval_loss": data.get("eval_metrics", {}).get("eval_loss"),
-            "seconds": None if path.parent.name in {"e06_full_early_final", "e07_seed123_final"} else data["elapsed_seconds"],
+            "seconds": data["elapsed_seconds"], "peak_gib": peak,
+            "truncated": data.get("sequence_lengths", {}).get("truncated_rows"),
         })
     return rows
 
 
-def choose_cases(samples):
-    total_delta = lambda sample: sample["tuned"]["reward"]["total"] - sample["base"]["reward"]["total"]
-    fidelity_delta = lambda sample: sample["tuned"]["reward"]["fidelity"] - sample["base"]["reward"]["fidelity"]
-    improved = max(samples, key=lambda sample: (total_delta(sample), fidelity_delta(sample)))
-    positives = [sample for sample in samples if total_delta(sample) > 0]
-    slight = min(positives, key=lambda sample: (total_delta(sample), abs(fidelity_delta(sample))))
-    unchanged = min(samples, key=lambda sample: abs(total_delta(sample)))
-    degraded = min(samples, key=fidelity_delta)
-    candidates = [improved, slight, unchanged, degraded]
-    ranked = sorted(samples, key=total_delta, reverse=True)
-    seen = set()
-    result = []
-    for sample in candidates + ranked:
-        if sample["id"] not in seen:
-            seen.add(sample["id"])
-            result.append(sample)
-        if len(result) == 4:
-            break
-    return result
-
-
-def case_note(sample):
-    notes = {
-        3: "总分明显提高，但图形落在画布外；改善主要是正确 namespace 与闭合结构，并非视觉成功。",
-        0: "总分轻微提高，但仅生成重复的浅色圆，提示保真度反而下降。",
-        5: "基座与 LoRA 都未生成唯一完整 SVG，是明确的无变化失败。",
-        14: "LoRA 输出可解析却是空白画布，fidelity 明显退化，构成典型 Goodhart 反例。",
-    }
-    return notes.get(sample["id"], "需结合渲染图判断结构有效性与视觉语义是否一致。")
-
-
-def build_markdown(data, experiments, name, student_id):
-    base, tuned, comparison = data["summary"]["base"], data["summary"]["tuned"], data["comparison"]
+def build_markdown(primary, secondary, stage1, selection, manual, experiments, name, student_id):
+    p0, p1 = primary["summary"]["base"], primary["summary"]["tuned"]
+    s1 = secondary["summary"]["tuned"]
+    warm = stage1["summary"]["tuned"]
+    comp = primary["comparison"]
+    verify = primary["verification"]
+    yaml_text = Path("train_config.yaml").read_text(encoding="utf-8").rstrip()
     lines = [
-        "# Gemma 3 270M 基于 LoRA 的 SVG 徽标生成",
+        "# Gemma 3 270M 完整 SVG LoRA 微调与审计",
+        "", f"- 姓名：{name}", f"- 学号：{student_id}",
+        "- 作业仓库：https://github.com/ao-wei/gemma3-270m-svg-lora-partb",
+        "- 数据来源：https://github.com/roboticcam/logo-detailed-prompt",
+        "", "## 摘要", "",
+        "本项目从零补齐 student kit，并在 Apple M4 MPS 上用 PEFT LoRA 训练 Gemma 3 270M。原始 219 条训练记录中两条 placeholder 在加载时过滤，源文件不修改；17 条验证集不参与学习率、epoch、seed 或 checkpoint 选择。三图元模型仅作为预热阶段，最终主 adapter 从该权重出发，用全部 217 条原始完整 SVG、3584 token 上限、seed 42 再训练一轮；seed 123 仅用于稳健性复跑。",
         "",
-        f"- 姓名：{name}", f"- 学号：{student_id}",
+        f"最终主模型把 fatal rate 从 {p0['fatal_rate']:.1%} 降到 {p1['fatal_rate']:.1%}，总 reward 从 {f(p0['total']['mean'])} 提高到 {f(p1['total']['mean'])}；但 quality pass rate 为 {p1['quality_pass_rate']:.1%}，人工审计也判定视觉有效输出为 0/17。因此可支持的结论仅是 SVG 外层格式更稳定，不能宣称模型完成了提示驱动的徽标生成。",
+        "", "## 1. 数据边界与训练方法", "",
+        "训练加载器使用模型自带 chat template；system、user 与 padding token 的标签全部为 -100，仅 assistant SVG token 参与交叉熵。完整 chat 最大长度为 3535，最终 max_length=3584，所有最终训练记录零截断。LoRA rank=4、alpha=16、dropout=0.05，仅作用于 q_proj/k_proj/v_proj/o_proj；batch size=1、梯度累积=8、梯度检查点开启。训练是监督微调，reward 只用于内部选择和分析，并非 RL。",
         "",
-        "## 摘要",
+        "为了在 16GB MPS 上保留完整 SVG，训练使用精确的分块词表投影损失：按 token 块计算 lm_head 与交叉熵，再按有效 assistant token 总数归一化。数值检查与原始全 logits loss 的绝对差为 0。precision:auto 仅对明确 BF16 算子不兼容错误重启 FP32；OOM 不会伪装成兼容问题。",
+        "", "## 2. Reward v3 与 pass 定义", "",
+        "总分公式为 0.30×语法安全 + 0.20×几何 + 0.15×结构样式 + 0.25×提示保真 + 0.10×反退化。提示保真内部为颜色 45%、图形 25%、空间 20%、构图 10%；不存在可靠空间要求时对其他分项重新归一化。空间关系只在元素可唯一匹配时评分，歧义标记 unscorable。stroke-width 必须有限、非负且不超过 viewBox 短边 10%。",
         "",
-        f"原始训练文件含 219 行，其中两行仅为冲突的 placeholder，训练时不修改源文件而过滤它们。其余 217 条固定拆为 195 条训练和 22 条开发数据；17 条最终验证集完全隔离。LoRA 将总 reward 从 {fmt(base['total']['mean'])} 提高到 {fmt(tuned['total']['mean'])}，但人工渲染显示多数可解析输出仍退化为单色背景，因此本报告把提升限定为格式稳定性，而不宣称高质量图形生成。",
-        "",
-        "## 1. 数据与方法",
-        "",
-        "原始数据包含 219 条训练记录和 17 条最终验证样本；两条 user prompt 仅为 placeholder 且目标冲突，训练时程序化过滤，源 JSONL 保持不变。其余数据内部固定划分 22 条开发样本用于超参数筛选和早停；公开验证集不参与训练或模型选择。所有输入使用基座模型自带 chat template，损失只计算 assistant 的 SVG token。",
-        "",
-        "采用 PEFT LoRA，仅作用于 q_proj、k_proj、v_proj、o_proj。训练设备为 Apple M4 MPS，不使用量化；batch size 为 1，并使用梯度累积和梯度检查点。最终课程式目标保留每个源 SVG 的前三个可见图元，以降低 270M 模型的序列难度；这是训练时派生视图，原始 JSONL 未修改。训练优化的是监督交叉熵，reward 只用于选择和分析，因此本项目不声称进行了强化学习。",
-        "",
-        "## 2. Reward 设计",
-        "",
-        "| 分项 | 权重 | 程序化检查 |",
-        "|---|---:|---|",
-        "| 语法与安全 | 30% | 单一 SVG、XML 可解析、xmlns、无脚本/外链/事件处理器 |",
-        "| 几何有效性 | 20% | viewBox、有限数值、主体坐标与尺寸合理 |",
-        "| 结构与样式 | 15% | 可见图元、元素数量、显式颜色和调色板规模 |",
-        "| 提示词保真度 | 25% | 提示颜色、可验证图元词和基本构图覆盖 |",
-        "| 反退化 | 10% | 截断、模板泄漏、异常长度和重复结构 |",
-        "",
-        "解析失败或包含主动内容的 SVG 被设置总分上限，避免用关键词堆砌绕过有效性检查。该 reward 无法可靠判断抽象图标语义和整体美感，因此最终仍需人工检查渲染图。",
-        "",
-        "## 3. 实验",
-        "",
-        "| 实验 | rank | 学习率 | 长度 | 样本 | epoch | 内部 eval loss | 耗时(s) |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        "- valid pass：非 fatal 且 validity ≥ 0.8。",
+        "- quality pass：valid pass、total ≥ 0.5、fidelity ≥ 0.3，且无背景/空白退化。",
+        "- 致命 XML/安全错误有总分上限；背景、画布外与重复退化进入 violations。",
+        "", "## 3. 补充实验与内部选择", "",
+        "| 实验 | 目标/seed | 训练/开发 | lr | 长度 | eval loss | 峰值 driver GiB | 秒 | 截断 |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in experiments:
-        loss = "-" if row["eval_loss"] is None else fmt(row["eval_loss"])
-        seconds = "-" if row["seconds"] is None else f"{row['seconds']:.1f}"
-        lines.append(f"| {row['name']} | {row['r']} | {row['lr']:.1e} | {row['length']} | {row['samples']} | {row['epochs']} | {loss} | {seconds} |")
+        loss = "-" if row["eval_loss"] is None else f(row["eval_loss"])
+        peak = "-" if row["peak_gib"] is None else f"{row['peak_gib']:.2f}"
+        trunc = "-" if row["truncated"] is None else row["truncated"]
+        lines.append(f"| {row['name']} | {row['target']} | {row['rows']}/{row['dev']} | {row['lr']:.1e} | {row['length']} | {loss} | {peak} | {row['seconds']:.1f} | {trunc} |")
     lines += [
         "",
-        "## 4. 最终验证结果",
-        "",
-        "| 指标 | 基座 | LoRA | 配对差值 | 95% bootstrap CI | 改善/持平/退化 |",
-        "|---|---:|---:|---:|---:|---:|",
+        f"E11/E12 只在固定 22 条内部开发集比较。E12 fatal rate={selection['candidates']['E12']['fatal_rate']:.1%} 且 fidelity 未改善，触发预声明排除门槛；选择 E11 的 lr={selection['selected_learning_rate']:.1e}。E13/E14 均从 stage1 初始权重重新训练全部 217 条；seed 42 预先指定为主模型。",
+        "", "## 4. 最终 17 条验证结果", "",
+        "| 模型 | total | validity | fidelity | fatal rate | valid pass | quality pass |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+        f"| Base | {f(p0['total']['mean'])} | {f(p0['validity']['mean'])} | {f(p0['fidelity']['mean'])} | {p0['fatal_rate']:.1%} | {p0['valid_pass_rate']:.1%} | {p0['quality_pass_rate']:.1%} |",
+        f"| Stage1（三图元） | {f(warm['total']['mean'])} | {f(warm['validity']['mean'])} | {f(warm['fidelity']['mean'])} | {warm['fatal_rate']:.1%} | {warm['valid_pass_rate']:.1%} | {warm['quality_pass_rate']:.1%} |",
+        f"| E13 seed42 | {f(p1['total']['mean'])} | {f(p1['validity']['mean'])} | {f(p1['fidelity']['mean'])} | {p1['fatal_rate']:.1%} | {p1['valid_pass_rate']:.1%} | {p1['quality_pass_rate']:.1%} |",
+        f"| E14 seed123 | {f(s1['total']['mean'])} | {f(s1['validity']['mean'])} | {f(s1['fidelity']['mean'])} | {s1['fatal_rate']:.1%} | {s1['valid_pass_rate']:.1%} | {s1['quality_pass_rate']:.1%} |",
+        "", "seed42 相对 base 的配对结果：",
+        "", "| 指标 | 均值差 | bootstrap 95% CI | 改善/持平/退化 |", "|---|---:|---:|---:|",
     ]
-    for metric, label in (("total", "总 reward"), ("validity", "有效性"), ("fidelity", "保真度")):
-        comp = comparison[metric]
-        ci = comp["bootstrap_95_ci"]
-        lines.append(f"| {label} | {fmt(base[metric]['mean'])} | {fmt(tuned[metric]['mean'])} | {fmt(comp['paired_mean_delta'])} | [{fmt(ci[0])}, {fmt(ci[1])}] | {comp['improved']}/{comp['unchanged']}/{comp['worsened']} |")
+    for key, label in (("total", "total"), ("validity", "validity"), ("fidelity", "fidelity")):
+        item = comp[key]; ci = item["bootstrap_95_ci"]
+        lines.append(f"| {label} | {f(item['paired_mean_delta'])} | [{f(ci[0])}, {f(ci[1])}] | {item['improved']}/{item['unchanged']}/{item['worsened']} |")
     lines += [
-        "",
-        f"基座 fatal rate 为 {base['fatal_rate']:.1%}，LoRA fatal rate 为 {tuned['fatal_rate']:.1%}。由于验证集仅 17 条，置信区间和逐例方向比单一均值更重要。",
-        "",
-        "## 5. 案例与 Goodhart 检查",
-        "",
-        "PDF 版本展示四组 reference/base/LoRA 渲染对比：指标明显改善、轻微改善、无变化以及 fidelity 退化。人工检查发现，LoRA 多数输出虽使用正确 namespace 并完整闭合，却退化为重复单色圆或画布外图元。Reward v2 因此新增正确 namespace、画布内前景、巨型背景与重复图元检查并给退化输出设置 0.35 上限。即便如此，分数提升主要仍来自 validity。",
-        "",
-        "| 样本 | total: base→LoRA | fidelity: base→LoRA | 人工结论 |",
-        "|---:|---:|---:|---|",
+        "", "## 5. 全量视觉审计与 Goodhart", "",
+        f"全部 17 条均人工检查 reference/base/seed42/seed123。seed42 视觉有效 {manual['summary']['seed42_visually_valid']}/17、背景单图元 {manual['summary']['seed42_background_only']}/17；seed123 视觉有效 {manual['summary']['seed123_visually_valid']}/17、背景单图元 {manual['summary']['seed123_background_only']}/17。程序化 reward 对可解析但空白/画布外输出仍给出约 0.35，总分因语法分被抬高，属于明确 Goodhart 反例。逐样本判断见 `manual_review.json`。",
         "",
     ]
-    for sample in choose_cases(data["samples"]):
-        lines.append(f"| {sample['id']} | {fmt(sample['base']['reward']['total'])}→{fmt(sample['tuned']['reward']['total'])} | {fmt(sample['base']['reward']['fidelity'])}→{fmt(sample['tuned']['reward']['fidelity'])} | {case_note(sample)} |")
-    for sample in choose_cases(data["samples"]):
-        sample_id = sample["id"]
-        lines += [
-            "",
-            f"### 样本 {sample_id}",
-            "",
-            "| 参考目标 | 基座 | LoRA |",
-            "|---|---|---|",
-            f"| ![reference](output/examples/sample_{sample_id:02d}_reference.png) | ![base](output/examples/sample_{sample_id:02d}_base.png) | ![LoRA](output/examples/sample_{sample_id:02d}_tuned.png) |",
-            "",
-            case_note(sample),
-        ]
+    for page in range(1, 5):
+        lines += [f"![全部样本视觉审计 {page}](output/audit/contact_sheet_{page}.png)", ""]
     lines += [
-        "",
-        "## 6. 局限与结论",
-        "",
-        "270M 模型容量极小，且前三图元课程牺牲了细节覆盖。LoRA 将 fatal rate 从 100% 降到 17.6%，证明格式学习有效；但 14 个非致命输出中仍有 13 个触发背景/画布退化上限，不能视为语义生成成功。后续应使用更强模型、结构化 SVG tokenization、分阶段增加图元，并加入栅格感知或视觉模型评测。",
-        "",
-        "## 7. 复现",
-        "",
-        "```bash",
-        "uv venv --python 3.12 .venv",
-        "uv pip install --python .venv/bin/python -r requirements.txt",
-        ".venv/bin/python student_kit/audit_data.py",
+        "## 6. 结论与局限", "",
+        "完整 SVG 继续训练确实把 seed42 的 fatal rate 降至 0，并且 34 个独立复验输出全部一致；但模型学习到的是高度重复、坐标为负的模板，几乎没有前景落在画布内。fidelity 的配对置信区间跨 0，两个 seed 的 quality pass 都为 0。270M 容量、长 SVG token 序列与纯文本交叉熵共同限制了语义构图。后续应采用更强基座、语法约束解码、结构化 SVG 表示和基于栅格图像的感知损失/评测。",
+        "", "## 7. 复现与验收", "",
+        "```bash", "uv venv --python 3.12 .venv", "uv pip install --python .venv/bin/python -r requirements.txt",
+        ".venv/bin/python -m unittest discover -s tests -v",
         ".venv/bin/python student_kit/train_peft.py --config train_config.yaml",
-        ".venv/bin/python student_kit/eval_self.py --model gemma3-270m-it --adapter adapter",
+        ".venv/bin/python student_kit/eval_self.py --adapter adapter --output results.json",
         ".venv/bin/python student_kit/analyze_results.py results.json",
-        "```",
-        "",
-        "完整逐样本输出、reward 分项、环境版本和固定解码参数见 `results.json`。",
+        ".venv/bin/python student_kit/build_visual_audit.py",
+        ".venv/bin/python student_kit/verify_artifacts.py --results results.json --repro runs/repro_full.json --adapter adapter",
+        "```", "",
+        f"验收：测试 {verify['unit_test_count']}/{verify['unit_test_count']}；新进程 adapter 加载={verify['fresh_process_adapter_load']}；schema v2={verify['results_schema_v2_valid']}；确定性复验 base {verify['deterministic_base_matches']}/17、tuned {verify['deterministic_tuned_matches']}/17。",
+        "", "## 附录 A：最终 train_config.yaml", "", "```yaml", yaml_text, "```", "",
+        "## 附录 B：哈希与结果 schema", "",
+        f"- 主 adapter SHA-256：`{verify['adapter_sha256']['adapter_model.safetensors']}`",
+        f"- train.jsonl SHA-256：`{verify['data_sha256']['train.jsonl']}`",
+        f"- valid.jsonl SHA-256：`{verify['data_sha256']['valid.jsonl']}`",
+        "- results schema v2：每条样本含 raw_text、svg、reward、passes.valid、passes.quality；汇总含 pass_rate、valid_pass_rate、quality_pass_rate。",
+        "- 关键产物：`results.json`、`results_seed123.json`、`results_stage1.json`、`render_manifest.json`、`manual_review.json`。",
     ]
     return "\n".join(lines) + "\n"
 
 
-def build_pdf(data, experiments, cases, name, student_id, output):
+def build_pdf(primary, secondary, stage1, selection, manual, experiments, name, student_id, output):
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.pagesizes import A4
@@ -177,103 +133,76 @@ def build_pdf(data, experiments, cases, name, student_id, output):
     from reportlab.lib.units import mm
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.platypus import Image, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, XPreformatted
 
-    font_path = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"
-    pdfmetrics.registerFont(TTFont("CJK", font_path))
+    font = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"
+    pdfmetrics.registerFont(TTFont("CJK", font))
     styles = getSampleStyleSheet()
-    for style in styles.byName.values():
-        style.fontName = "CJK"
-    styles.add(ParagraphStyle(name="ChineseTitle", parent=styles["Title"], fontName="CJK", fontSize=23, leading=32, alignment=TA_CENTER, textColor=colors.HexColor("#17324D")))
-    styles.add(ParagraphStyle(name="ChineseHeading", parent=styles["Heading2"], fontName="CJK", fontSize=15, leading=22, spaceBefore=12, spaceAfter=7, textColor=colors.HexColor("#176B87")))
-    styles.add(ParagraphStyle(name="ChineseBody", parent=styles["BodyText"], fontName="CJK", fontSize=9.5, leading=16, spaceAfter=6))
-    styles.add(ParagraphStyle(name="SmallCJK", parent=styles["BodyText"], fontName="CJK", fontSize=7.3, leading=10))
+    for style in styles.byName.values(): style.fontName = "CJK"
+    styles.add(ParagraphStyle(name="TitleCJK", parent=styles["Title"], fontName="CJK", fontSize=22, leading=31, alignment=TA_CENTER, textColor=colors.HexColor("#17324D")))
+    styles.add(ParagraphStyle(name="H2CJK", parent=styles["Heading2"], fontName="CJK", fontSize=14, leading=20, spaceBefore=10, spaceAfter=6, textColor=colors.HexColor("#176B87")))
+    styles.add(ParagraphStyle(name="BodyCJK", parent=styles["BodyText"], fontName="CJK", fontSize=9, leading=14, spaceAfter=5))
+    styles.add(ParagraphStyle(name="SmallCJK", parent=styles["BodyText"], fontName="CJK", fontSize=7, leading=9))
+    styles.add(ParagraphStyle(name="CodeCJK", parent=styles["Code"], fontName="CJK", fontSize=5.8, leading=7.4, backColor=colors.HexColor("#F4F6F7"), borderPadding=5))
 
     def footer(canvas, doc):
-        canvas.saveState()
-        canvas.setFont("CJK", 8)
-        canvas.setFillColor(colors.HexColor("#607080"))
-        canvas.drawString(20 * mm, 12 * mm, "Gemma 3 270M SVG LoRA - Part B")
-        canvas.drawRightString(190 * mm, 12 * mm, str(doc.page))
-        canvas.restoreState()
+        canvas.saveState(); canvas.setFont("CJK", 8); canvas.setFillColor(colors.HexColor("#607080"))
+        canvas.drawString(18*mm, 11*mm, "Gemma 3 270M 完整 SVG LoRA 实验报告")
+        canvas.drawRightString(192*mm, 11*mm, str(doc.page)); canvas.restoreState()
 
-    doc = SimpleDocTemplate(str(output), pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=18 * mm, bottomMargin=20 * mm, title="Gemma 3 270M SVG LoRA")
-    story = [Spacer(1, 28 * mm), Paragraph("Gemma 3 270M 基于 LoRA 的<br/>SVG 徽标生成", styles["ChineseTitle"]), Spacer(1, 18 * mm)]
-    identity = [["姓名", name], ["学号", student_id], ["日期", date.today().isoformat()]]
-    table = Table(identity, colWidths=[32 * mm, 80 * mm], hAlign="CENTER")
-    table.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), "CJK"), ("FONTSIZE", (0, 0), (-1, -1), 10), ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#A8B6C2")), ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EAF3F6")), ("PADDING", (0, 0), (-1, -1), 7)]))
-    story += [table, PageBreak()]
+    def table(rows, widths, size=7.3):
+        t = Table(rows, colWidths=widths, repeatRows=1)
+        t.setStyle(TableStyle([("FONTNAME", (0,0), (-1,-1), "CJK"), ("FONTSIZE", (0,0), (-1,-1), size), ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#176B87")), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F3F7F8")]), ("GRID", (0,0), (-1,-1), .3, colors.HexColor("#A8B6C2")), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,1), (-1,-1), "CENTER"), ("PADDING", (0,0), (-1,-1), 3)]))
+        return t
 
-    base, tuned, comp = data["summary"]["base"], data["summary"]["tuned"], data["comparison"]
-    story += [Paragraph("摘要", styles["ChineseHeading"]), Paragraph(f"将 217 条可用记录固定分为 195 条训练和 22 条开发数据，对 Gemma 3 270M 进行 LoRA 监督微调；17 条最终验证样本完全隔离。总 reward 从 {fmt(base['total']['mean'])} 提高到 {fmt(tuned['total']['mean'])}，但人工渲染显示多数非致命输出仍退化为单色背景。因此结论是“格式稳定性明显改善，视觉语义生成仍未成功”。", styles["ChineseBody"])]
-    story += [Paragraph("1. 数据、训练与评测设计", styles["ChineseHeading"]), Paragraph("原始 219 条中的两条 placeholder 目标相互冲突，仅在加载时过滤，源 JSONL 不修改。模型使用自带 chat template，system/user/padding token 的标签均为 -100，只有 assistant SVG token 计算损失。最终训练使用每个目标的前三个可见图元作为课程式派生目标，以降低 270M 模型的长序列难度。LoRA 仅插入 q/k/v/o 投影层；MPS 上使用 batch 1、梯度累积和梯度检查点。固定评测为 greedy、单 beam、最多 2048 个新 token。", styles["ChineseBody"])]
-    story += [Paragraph("2. Reward 设计", styles["ChineseHeading"])]
-    reward_rows = [["分项", "权重", "关键检查"], ["语法与安全", "30%", "单一可解析 SVG；无脚本、外链和事件"], ["几何", "20%", "viewBox、有限数值、主体坐标"], ["结构与样式", "15%", "图元、颜色、调色板、非空白"], ["提示词保真", "25%", "颜色、可验证图元词、基本构图"], ["反退化", "10%", "截断、异常长度、模板泄漏、重复"]]
-    reward_table = Table(reward_rows, colWidths=[28 * mm, 16 * mm, 125 * mm], repeatRows=1)
-    reward_table.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), "CJK"), ("FONTSIZE", (0, 0), (-1, -1), 8), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#176B87")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#A8B6C2")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("PADDING", (0, 0), (-1, -1), 4)]))
-    story += [reward_table, Paragraph("Reward v2 要求正确 SVG namespace，并检查画布内前景、重复图元、巨型背景与折叠路径。背景/空白退化的 total 上限为 0.35；致命 XML/安全错误上限为 0.10。仍需渲染图进行 Goodhart 检查。", styles["ChineseBody"])]
+    doc = SimpleDocTemplate(str(output), pagesize=A4, leftMargin=17*mm, rightMargin=17*mm, topMargin=16*mm, bottomMargin=18*mm, title="Gemma 3 270M 完整 SVG LoRA")
+    story = [Spacer(1, 30*mm), Paragraph("Gemma 3 270M 完整 SVG<br/>LoRA 微调与审计", styles["TitleCJK"]), Spacer(1, 16*mm), table([["姓名", name], ["学号", student_id], ["日期", date.today().isoformat()]], [30*mm, 85*mm], 10), PageBreak()]
+    p0, p1 = primary["summary"]["base"], primary["summary"]["tuned"]
+    s1, warm, comp = secondary["summary"]["tuned"], stage1["summary"]["tuned"], primary["comparison"]
+    story += [Paragraph("摘要", styles["H2CJK"]), Paragraph(f"三图元模型仅作预热阶段；最终 seed42 adapter 从该权重出发，对全部 217 条原始完整 SVG 继续训练，最大序列 3535 token，零截断。fatal rate 从 {p0['fatal_rate']:.1%} 降到 {p1['fatal_rate']:.1%}，但 quality pass 为 {p1['quality_pass_rate']:.1%}，人工视觉有效为 0/17。结论仅限于格式稳定性改善。", styles["BodyCJK"]),
+              Paragraph("1. 数据、训练与评测边界", styles["H2CJK"]), Paragraph("原始 train.jsonl 219 条，加载时过滤两条冲突 placeholder，原文件不修改。E11/E12 只用固定 195/22 内部划分选学习率；17 条最终验证集不参与学习率、epoch、seed 或 checkpoint 选择。chat template 来自本地模型，只对 assistant SVG token 计算交叉熵。LoRA r=4、alpha=16，目标 q/k/v/o。MPS 上 BF16、batch 1、累积 8，通过精确分块 lm_head 损失避免物化全长度词表 logits。", styles["BodyCJK"]),
+              Paragraph("2. Reward v3 与 pass 定义", styles["H2CJK"])]
+    reward_rows = [["分项", "权重", "检查"], ["语法/安全", "30%", "单一可解析 SVG；无脚本、外链"], ["几何", "20%", "viewBox、有限数、stroke、画布内前景"], ["结构/样式", "15%", "可见图元、颜色、非空白"], ["提示保真", "25%", "颜色45%、图形25%、空间20%、构图10%"], ["反退化", "10%", "截断、重复、模板泄漏、异常长度"]]
+    story += [table(reward_rows, [30*mm, 17*mm, 125*mm], 8), Paragraph("valid pass = 非 fatal 且 validity≥0.8。quality pass = valid、total≥0.5、fidelity≥0.3，且无背景/空白退化。空间关系仅在图形/颜色可唯一匹配时评分。", styles["BodyCJK"]), Paragraph("3. E10–E14 实验", styles["H2CJK"])]
+    exp_rows = [["实验", "目标", "训/开发", "lr", "len", "eval loss", "峰值GiB", "秒"]]
+    for r in experiments: exp_rows.append([r["name"], r["target"], f"{r['rows']}/{r['dev']}", f"{r['lr']:.1e}", r["length"], "-" if r["eval_loss"] is None else f(r["eval_loss"]), "-" if r["peak_gib"] is None else f"{r['peak_gib']:.2f}", f"{r['seconds']:.0f}"])
+    story += [table(exp_rows, [21*mm, 42*mm, 20*mm, 18*mm, 15*mm, 23*mm, 20*mm, 15*mm], 6.8), Paragraph(f"E12 fatal rate={selection['candidates']['E12']['fatal_rate']:.1%} 且 fidelity 未改善，按预注册门槛排除；选择 E11 lr={selection['selected_learning_rate']:.1e}。E13/E14 从同一 stage1 权重分别训练全部 217 条。", styles["BodyCJK"]), Paragraph("4. 最终定量结果", styles["H2CJK"])]
+    result_rows = [["模型", "total", "validity", "fidelity", "fatal", "valid pass", "quality pass"]]
+    for label, x in (("Base", p0), ("Stage1", warm), ("E13 seed42", p1), ("E14 seed123", s1)):
+        result_rows.append([label, f(x["total"]["mean"]), f(x["validity"]["mean"]), f(x["fidelity"]["mean"]), f"{x['fatal_rate']:.1%}", f"{x['valid_pass_rate']:.1%}", f"{x['quality_pass_rate']:.1%}"])
+    story += [table(result_rows, [31*mm, 23*mm, 23*mm, 23*mm, 21*mm, 25*mm, 27*mm], 7.2)]
+    ci = comp["fidelity"]["bootstrap_95_ci"]
+    story += [Paragraph(f"seed42 total 均值差={f(comp['total']['paired_mean_delta'])}，95% CI=[{f(comp['total']['bootstrap_95_ci'][0])}, {f(comp['total']['bootstrap_95_ci'][1])}]。fidelity 均值差={f(comp['fidelity']['paired_mean_delta'])}，95% CI=[{f(ci[0])}, {f(ci[1])}]，跨 0；因此不能宣称提示保真度显著改善。", styles["BodyCJK"]), PageBreak()]
 
-    story += [Paragraph("3. 受控实验", styles["ChineseHeading"])]
-    exp_rows = [["实验", "r", "lr", "长度", "样本", "epoch", "eval loss", "秒"]]
-    for row in experiments:
-        exp_rows.append([row["name"], row["r"], f"{row['lr']:.1e}", row["length"], row["samples"], row["epochs"], "-" if row["eval_loss"] is None else fmt(row["eval_loss"]), "-" if row["seconds"] is None else f"{row['seconds']:.0f}"])
-    exp_table = Table(exp_rows, colWidths=[37 * mm, 10 * mm, 20 * mm, 17 * mm, 17 * mm, 16 * mm, 25 * mm, 16 * mm], repeatRows=1)
-    exp_table.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), "CJK"), ("FONTSIZE", (0, 0), (-1, -1), 6.8), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#17324D")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F7F8")]), ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#B6C0C8")), ("ALIGN", (1, 1), (-1, -1), "CENTER"), ("PADDING", (0, 0), (-1, -1), 3)]))
-    story += [exp_table, Paragraph("E6/E7 从已有 checkpoint 独立重载评测，故不把重载耗时冒充训练耗时。完整目标虽有更低 dev loss，但生成经常截断；E10 的三图元课程在内部生成检查上 fatal rate 为 0，因此被冻结为最终 adapter。", styles["ChineseBody"])]
-
-    story += [Paragraph("4. 最终验证结果", styles["ChineseHeading"])]
-    result_rows = [["指标", "基座", "LoRA", "差值", "95% CI", "改善/平/退"]]
-    for metric, label in (("total", "总分"), ("validity", "有效性"), ("fidelity", "保真度")):
-        c = comp[metric]; ci = c["bootstrap_95_ci"]
-        result_rows.append([label, fmt(base[metric]["mean"]), fmt(tuned[metric]["mean"]), fmt(c["paired_mean_delta"]), f"[{fmt(ci[0])}, {fmt(ci[1])}]", f"{c['improved']}/{c['unchanged']}/{c['worsened']}"])
-    result_table = Table(result_rows, colWidths=[26 * mm, 24 * mm, 24 * mm, 24 * mm, 48 * mm, 25 * mm])
-    result_table.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), "CJK"), ("FONTSIZE", (0, 0), (-1, -1), 8), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#176B87")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#A8B6C2")), ("ALIGN", (1, 1), (-1, -1), "CENTER"), ("PADDING", (0, 0), (-1, -1), 4)]))
-    story += [result_table, Paragraph(f"基座 fatal rate：{base['fatal_rate']:.1%}；LoRA fatal rate：{tuned['fatal_rate']:.1%}。验证集仅 17 条，因此同时报告配对 bootstrap 区间和逐例方向。", styles["ChineseBody"])]
-
-    story += [Paragraph("5. 前后对比与 Goodhart 检查", styles["ChineseHeading"])]
-    rendered = Path("output/rendered")
-    for number, sample in enumerate(cases, 1):
-        delta = sample["tuned"]["reward"]["total"] - sample["base"]["reward"]["total"]
-        images = []
-        labels = []
-        for variant, label in (("reference", "参考目标"), ("base", "基座"), ("tuned", "LoRA")):
-            path = rendered / f"sample_{sample['id']:02d}_{variant}.png"
-            if path.exists():
-                images.append(Image(str(path), width=48 * mm, height=48 * mm))
-                labels.append(Paragraph(label, styles["SmallCJK"]))
-        if len(images) == 3:
-            grid = Table([images, labels], colWidths=[55 * mm] * 3)
-            grid.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("GRID", (0, 0), (-1, 0), 0.35, colors.HexColor("#C7D0D6")), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#FAFAFA"))]))
-            caption = Paragraph(f"案例 {number}（样本 {sample['id']}）：base={fmt(sample['base']['reward']['total'])}，LoRA={fmt(sample['tuned']['reward']['total'])}，Δ={fmt(delta)}。{case_note(sample)}", styles["ChineseBody"])
-            story.extend([KeepTogether([grid]), caption, Spacer(1, 3 * mm)])
-    story += [Paragraph("程序化分数仍不会理解叶片、动物或抽象品牌含义。图中的 INVALID SVG 卡片表示安全检查失败，不是伪造的渲染图。", styles["ChineseBody"])]
-    story += [Paragraph("6. 结论与局限", styles["ChineseHeading"]), Paragraph(f"LoRA 将 fatal rate 从 {base['fatal_rate']:.1%} 降至 {tuned['fatal_rate']:.1%}，显示 270M 模型学会了正确 namespace 和完整闭合。但 14 个非致命输出中有 13 个触发背景/画布退化上限，因此不能宣称已解决视觉语义生成。更合理的后续方向是更强模型、逐步增加图元的课程、结构化 SVG tokenization，以及栅格/视觉模型评测。", styles["ChineseBody"])]
-    story += [Paragraph("7. 复现与验收", styles["ChineseHeading"]), Paragraph(f"环境：{data['environment']['platform']}；PyTorch {data['environment']['torch']}；Transformers {data['environment']['transformers']}；PEFT {data['environment']['peft']}。固定解码 seed={data['decoding']['seed']}，EOS token IDs={data['decoding'].get('eos_token_ids', [])}。单元测试、adapter 独立加载、数据哈希和逐样本输出分别见 tests/、adapter/、data_audit.json 和 results.json。", styles["ChineseBody"])]
+    for page in range(1, 5):
+        story += [Paragraph(f"5. 全量视觉审计（{page}/4）", styles["H2CJK"]), Image(f"output/audit/contact_sheet_{page}.png", width=174*mm, height=(174*mm)*(1316/920 if page < 4 else 580/920)), PageBreak()]
+    story += [Paragraph("6. Goodhart 分析、结论与局限", styles["H2CJK"]), Paragraph(f"人工审计：seed42 视觉有效 {manual['summary']['seed42_visually_valid']}/17，背景单图元 {manual['summary']['seed42_background_only']}/17；seed123 视觉有效 {manual['summary']['seed123_visually_valid']}/17，背景单图元 {manual['summary']['seed123_background_only']}/17。许多输出 XML 可解析但图元均在负坐标或仅有巨型圆，Reward 仍因语法分给出约 0.35，是明确的代理指标高估。两个 seed 的 quality pass 均为 0，所以本项目只证明格式稳定性改善，没有解决视觉语义生成。", styles["BodyCJK"]), Paragraph("270M 容量、长 SVG token 序列和纯文本损失是主要限制。后续应考虑更强基座、语法约束解码、结构化 SVG 表示，以及栅格/视觉模型感知损失。", styles["BodyCJK"]), Paragraph("7. 复现与验收", styles["H2CJK"])]
+    verify = primary["verification"]
+    checks = [["验收项", "结果"], ["单元测试", f"{verify['unit_test_count']}/{verify['unit_test_count']}"], ["adapter 新进程加载", str(verify["fresh_process_adapter_load"])], ["results schema v2", str(verify["results_schema_v2_valid"])], ["确定性复验", f"base {verify['deterministic_base_matches']}/17; tuned {verify['deterministic_tuned_matches']}/17"], ["train/valid SHA-256", verify["data_sha256"]["train.jsonl"][:16]+"… / "+verify["data_sha256"]["valid.jsonl"][:16]+"…"], ["adapter SHA-256", verify["adapter_sha256"]["adapter_model.safetensors"]]]
+    story += [table(checks, [55*mm, 118*mm], 7.5), Paragraph("关键产物：results.json、results_seed123.json、results_stage1.json、render_manifest.json、manual_review.json。作业仓库不包含基座模型、.venv、缓存或 checkpoint。", styles["BodyCJK"]), PageBreak(), Paragraph("附录 A：最终 train_config.yaml", styles["H2CJK"]), XPreformatted(Path("train_config.yaml").read_text(encoding="utf-8"), styles["CodeCJK"]), Paragraph("附录 B：Reward、schema 与复现命令", styles["H2CJK"]), Paragraph("结果 schema v2 每条样本保存 prompt、reference_svg、base/tuned raw_text、清理后 svg、reward 分项、violations、passes.valid 和 passes.quality；汇总保存 pass_rate、valid_pass_rate 与 quality_pass_rate。", styles["BodyCJK"])]
+    commands = """uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python -r requirements.txt
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python student_kit/train_peft.py --config train_config.yaml
+.venv/bin/python student_kit/eval_self.py --adapter adapter --output results.json
+.venv/bin/python student_kit/analyze_results.py results.json
+.venv/bin/python student_kit/build_visual_audit.py
+.venv/bin/python student_kit/verify_artifacts.py --results results.json --repro runs/repro_full.json --adapter adapter"""
+    story += [XPreformatted(commands, styles["CodeCJK"]), Paragraph("身份信息已校验：仅包含姓名与学号，无其他身份字段或占位符。", styles["BodyCJK"])]
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--results", default="results.json")
-    parser.add_argument("--runs", default="runs")
-    parser.add_argument("--name", default="待填写")
-    parser.add_argument("--student-id", default="待填写")
+    parser.add_argument("--name", default="敖炜")
+    parser.add_argument("--student-id", default="202521080810")
     args = parser.parse_args()
-    data = json.loads(Path(args.results).read_text(encoding="utf-8"))
-    experiments = load_experiments(Path(args.runs))
-    cases = choose_cases(data["samples"])
-    examples = Path("output/examples")
-    examples.mkdir(parents=True, exist_ok=True)
-    for sample in cases:
-        for variant in ("reference", "base", "tuned"):
-            filename = f"sample_{sample['id']:02d}_{variant}.png"
-            shutil.copy2(Path("output/rendered") / filename, examples / filename)
-    Path("report.md").write_text(build_markdown(data, experiments, args.name, args.student_id), encoding="utf-8")
-    output = Path("output/pdf/partB_svg_lora_report.pdf")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    build_pdf(data, experiments, cases, args.name, args.student_id, output)
+    primary, secondary, stage1 = read_json("results.json"), read_json("results_seed123.json"), read_json("results_stage1.json")
+    selection, manual, experiments = read_json("artifacts/model_selection.json"), read_json("manual_review.json"), experiment_rows()
+    Path("report.md").write_text(build_markdown(primary, secondary, stage1, selection, manual, experiments, args.name, args.student_id), encoding="utf-8")
+    output = Path("output/pdf/partB_svg_lora_report.pdf"); output.parent.mkdir(parents=True, exist_ok=True)
+    build_pdf(primary, secondary, stage1, selection, manual, experiments, args.name, args.student_id, output)
     print(f"wrote report.md and {output}")
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()

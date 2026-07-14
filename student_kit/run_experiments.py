@@ -33,10 +33,16 @@ def main():
         if summary.exists():
             print(f"skip completed {name}", flush=True)
             continue
-        resolved = read_yaml(args.config)
-        resolved.update(defaults)
-        resolved.update({key: value for key, value in experiment.items() if key != "name"})
-        resolved["num_train_epochs"] = resolved.pop("epochs", resolved["num_train_epochs"])
+        if experiment.get("config"):
+            resolved = read_yaml(experiment["config"])
+        else:
+            resolved = read_yaml(args.config)
+            resolved.update(defaults)
+            resolved.update({
+                key: value for key, value in experiment.items()
+                if key not in {"name", "role", "config"}
+            })
+            resolved["num_train_epochs"] = resolved.pop("epochs", resolved["num_train_epochs"])
         resolved["output_dir"] = str(Path("runs") / name)
         experiment_dir = Path("runs") / name
         experiment_dir.mkdir(parents=True, exist_ok=True)

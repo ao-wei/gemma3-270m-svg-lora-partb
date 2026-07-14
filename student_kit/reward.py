@@ -21,7 +21,7 @@ WEIGHTS = {
     "prompt_fidelity": 0.25,
     "anti_degeneracy": 0.10,
 }
-REWARD_VERSION = "2.0"
+REWARD_VERSION = "3.0"
 
 VISIBLE_TAGS = {"path", "circle", "ellipse", "rect", "polygon", "polyline", "line", "text"}
 FORBIDDEN_TAGS = {"script", "image", "iframe", "object", "embed", "foreignobject", "audio", "video"}
@@ -188,6 +188,9 @@ def _geometry(root: ET.Element | None, violations: list[str]) -> float:
                 if value is not None and value < 0:
                     violations.append(f"negative_{name}")
                     outside += 1
+                if name == "stroke-width" and value is not None and value > 0.10 * min(width, height):
+                    violations.append("unreasonable_stroke_width")
+                    score -= 0.35
                 coordinate_checks += value is not None
             if name in x_attrs or name in y_attrs:
                 value = _parse_number(raw)
@@ -337,6 +340,97 @@ def _structure_style(root: ET.Element | None, violations: list[str]) -> tuple[fl
     }
 
 
+def _element_colors(element: ET.Element) -> set[str]:
+    colors: set[str] = set()
+    for raw_key, raw_value in element.attrib.items():
+        key, value = _local_name(raw_key), str(raw_value).lower().strip()
+        if key not in COLOR_ATTRS and key != "style":
+            continue
+        colors.update(x.lower() for x in HEX_COLOR.findall(value))
+        colors.update(x.lower() for x in RGB_COLOR.findall(value))
+        colors.update(set(re.findall(r"[a-z]+", value)) & COLOR_NAMES)
+    return colors
+
+
+def _spatial_fidelity(prompt: str, root: ET.Element) -> tuple[float | None, dict[str, Any]]:
+    values = [float(x) for x in NUMBER.findall(root.attrib.get("viewBox", ""))]
+    if len(values) != 4 or values[2] <= 0 or values[3] <= 0:
+        return None, {"spatial_requests": [], "spatial_scorable": 0, "spatial_hits": 0}
+    min_x, min_y, width, height = values
+    descriptors = []
+    for element in root.iter():
+        tag = _local_name(element.tag)
+        if tag not in VISIBLE_TAGS:
+            continue
+        box = _element_box(element)
+        if box is None:
+            continue
+        x0, y0, x1, y1 = box
+        overlap_x = max(0.0, min(x1, min_x + width) - max(x0, min_x))
+        overlap_y = max(0.0, min(y1, min_y + height) - max(y0, min_y))
+        if not ((overlap_x > 0 or overlap_y > 0) and (x1 - x0 >= 1 or y1 - y0 >= 1)):
+            continue
+        fraction = overlap_x * overlap_y / (width * height)
+        descriptors.append({
+            "tag": tag,
+            "colors": _element_colors(element),
+            "cx": (x0 + x1) / 2,
+            "cy": (y0 + y1) / 2,
+            "box": (x0, y0, x1, y1),
+            "cover": fraction >= 0.72,
+        })
+    foreground = [item for item in descriptors if not item["cover"]]
+    prompt_lower = (prompt or "").lower()
+    requests: list[dict[str, Any]] = []
+    if foreground:
+        x0 = min(item["box"][0] for item in foreground)
+        y0 = min(item["box"][1] for item in foreground)
+        x1 = max(item["box"][2] for item in foreground)
+        y1 = max(item["box"][3] for item in foreground)
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        global_rules = [
+            (r"\b(?:center|centered|centred|middle)\b", "center", min_x + 0.3 * width <= cx <= min_x + 0.7 * width and min_y + 0.3 * height <= cy <= min_y + 0.7 * height),
+            (r"\b(?:left side|on the left|aligned left)\b", "left", cx <= min_x + 0.4 * width),
+            (r"\b(?:right side|on the right|aligned right)\b", "right", cx >= min_x + 0.6 * width),
+            (r"\b(?:at|along|near) the top\b|\btop (?:edge|half|portion)\b|\bupper (?:half|portion)\b", "top", cy <= min_y + 0.4 * height),
+            (r"\b(?:at|along|near) the bottom\b|\bbottom (?:edge|half|portion)\b|\blower (?:half|portion)\b", "bottom", cy >= min_y + 0.6 * height),
+        ]
+        for pattern, relation, passed in global_rules:
+            if re.search(pattern, prompt_lower):
+                requests.append({"kind": "global", "relation": relation, "scorable": True, "passed": passed})
+
+    shape_words = "|".join(sorted(SHAPE_RULES, key=len, reverse=True))
+    relation_pattern = re.compile(
+        rf"\b({shape_words})\b\s+(?:is\s+|to\s+the\s+)?(left|right|above|below)(?:\s+of)?\s+(?:(?:a|an|the)\s+)?\b({shape_words})\b"
+    )
+    for match in relation_pattern.finditer(prompt_lower):
+        first, relation, second = match.groups()
+        first_matches = [item for item in foreground if item["tag"] in SHAPE_RULES[first]]
+        second_matches = [item for item in foreground if item["tag"] in SHAPE_RULES[second]]
+        request = {"kind": "pairwise", "relation": relation, "first": first, "second": second}
+        if len(first_matches) != 1 or len(second_matches) != 1 or first_matches[0] is second_matches[0]:
+            requests.append({**request, "scorable": False, "passed": None})
+            continue
+        a, b = first_matches[0], second_matches[0]
+        margin_x, margin_y = 0.05 * width, 0.05 * height
+        passed = {
+            "left": a["cx"] + margin_x < b["cx"],
+            "right": a["cx"] > b["cx"] + margin_x,
+            "above": a["cy"] + margin_y < b["cy"],
+            "below": a["cy"] > b["cy"] + margin_y,
+        }[relation]
+        requests.append({**request, "scorable": True, "passed": passed})
+    scorable = [item for item in requests if item["scorable"]]
+    hits = sum(bool(item["passed"]) for item in scorable)
+    score = hits / len(scorable) if scorable else None
+    return score, {
+        "spatial_requests": requests,
+        "spatial_scorable": len(scorable),
+        "spatial_hits": hits,
+        "spatial_coverage": None if score is None else _clip(score),
+    }
+
+
 def _prompt_fidelity(prompt: str, root: ET.Element | None, metadata: dict[str, Any]) -> tuple[float, dict[str, Any]]:
     if root is None:
         return 0.0, {"prompt_colors": [], "color_coverage": 0.0, "shape_coverage": 0.0}
@@ -365,9 +459,16 @@ def _prompt_fidelity(prompt: str, root: ET.Element | None, metadata: dict[str, A
         if requested_shapes else 1.0
     )
 
-    # A logo should use the canvas rather than collapse to a tiny or empty fragment.
+    spatial_coverage, spatial_details = _spatial_fidelity(prompt, root)
     composition = 1.0 if metadata.get("meaningful_foreground_elements", 0) >= 1 else 0.0
-    score = 0.55 * color_coverage + 0.30 * shape_coverage + 0.15 * composition
+    weighted = [(0.10, composition)]
+    if prompt_colors:
+        weighted.append((0.45, color_coverage))
+    if requested_shapes:
+        weighted.append((0.25, shape_coverage))
+    if spatial_coverage is not None:
+        weighted.append((0.20, spatial_coverage))
+    score = sum(weight * value for weight, value in weighted) / sum(weight for weight, _ in weighted)
     details = {
         "prompt_colors": sorted(prompt_colors),
         "svg_colors": sorted(svg_colors),
@@ -375,6 +476,7 @@ def _prompt_fidelity(prompt: str, root: ET.Element | None, metadata: dict[str, A
         "requested_primitive_terms": sorted(requested_shapes),
         "shape_coverage": _clip(shape_coverage),
         "composition": composition,
+        **spatial_details,
     }
     return _clip(score), details
 

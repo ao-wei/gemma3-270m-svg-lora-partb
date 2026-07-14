@@ -6,10 +6,12 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import subprocess
+import sys
 import time
 from pathlib import Path
 
-from common import device_name, read_yaml, set_seed, write_json
+from common import device_name, is_bf16_compatibility_error, read_yaml, set_seed, write_json
 from data import CompletionOnlyCollator, filter_uninformative_prompts, load_jsonl, simplify_svg_targets, split_train_dev, tokenize_example
 
 
@@ -44,6 +46,7 @@ def parse_args():
     parser.add_argument("--shortest-first", action="store_true")
     parser.add_argument("--simplify-targets", action="store_true")
     parser.add_argument("--max-visible-elements", type=int)
+    parser.add_argument("--init-adapter-path")
     return parser.parse_args()
 
 
@@ -61,6 +64,7 @@ def main() -> None:
         "eval_steps": args.eval_steps,
         "dev_size": args.dev_size,
         "early_stopping_patience": args.early_stopping_patience,
+        "init_adapter_path": args.init_adapter_path,
     }.items():
         if value is not None:
             config[key] = value
@@ -75,11 +79,67 @@ def main() -> None:
 
     import torch
     import transformers
-    from peft import LoraConfig, get_peft_model
+    from peft import LoraConfig, PeftModel, get_peft_model
     from transformers import AutoModelForCausalLM, AutoTokenizer, EarlyStoppingCallback, Trainer, TrainerCallback, TrainingArguments
+
+    class ChunkedLossTrainer(Trainer):
+        """Compute exact causal LM loss without materializing all vocabulary logits at once."""
+
+        def __init__(self, *trainer_args, loss_chunk_size=0, **trainer_kwargs):
+            super().__init__(*trainer_args, **trainer_kwargs)
+            self.loss_chunk_size = int(loss_chunk_size)
+
+        def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+            if not self.loss_chunk_size:
+                return super().compute_loss(
+                    model, inputs, return_outputs=return_outputs, num_items_in_batch=num_items_in_batch
+                )
+            import torch.nn.functional as F
+            from torch.utils.checkpoint import checkpoint
+
+            labels = inputs["labels"]
+            base = model.get_base_model()
+            outputs = base.model(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs.get("attention_mask"),
+                use_cache=False,
+                return_dict=True,
+            )
+            hidden = outputs.last_hidden_state[:, :-1, :]
+            targets = labels[:, 1:]
+            active_tokens = (targets != -100).sum().clamp_min(1)
+
+            def chunk_loss(chunk_hidden, chunk_targets):
+                logits = base.lm_head(chunk_hidden).float()
+                return F.cross_entropy(
+                    logits.reshape(-1, logits.shape[-1]),
+                    chunk_targets.reshape(-1),
+                    ignore_index=-100,
+                    reduction="sum",
+                )
+
+            losses = []
+            for start in range(0, hidden.shape[1], self.loss_chunk_size):
+                chunk_hidden = hidden[:, start : start + self.loss_chunk_size]
+                chunk_targets = targets[:, start : start + self.loss_chunk_size]
+                if model.training:
+                    losses.append(checkpoint(chunk_loss, chunk_hidden, chunk_targets, use_reentrant=False))
+                else:
+                    losses.append(chunk_loss(chunk_hidden, chunk_targets))
+            loss = torch.stack(losses).sum() / active_tokens
+            return (loss, {"loss": loss}) if return_outputs else loss
 
     class MPSCacheCallback(TrainerCallback):
         """Release unused Metal allocations during long variable-length runs."""
+
+        def __init__(self):
+            self.peak_current_bytes = 0
+            self.peak_driver_bytes = 0
+
+        def _sample(self):
+            if torch.backends.mps.is_available():
+                self.peak_current_bytes = max(self.peak_current_bytes, torch.mps.current_allocated_memory())
+                self.peak_driver_bytes = max(self.peak_driver_bytes, torch.mps.driver_allocated_memory())
 
         @staticmethod
         def _clear():
@@ -87,9 +147,11 @@ def main() -> None:
                 torch.mps.empty_cache()
 
         def on_step_end(self, args, state, control, **kwargs):
+            self._sample()
             self._clear()
 
         def on_substep_end(self, args, state, control, **kwargs):
+            self._sample()
             self._clear()
 
     seed = int(config["seed"])
@@ -124,6 +186,13 @@ def main() -> None:
         train_rows = train_rows[: int(max_samples)]
 
     max_length = int(config["max_length"])
+    token_lengths = [
+        len(tokenizer.apply_chat_template(row["messages"], tokenize=True, add_generation_prompt=False))
+        for row in train_rows + dev_rows
+    ]
+    truncated_rows = sum(length > max_length for length in token_lengths)
+    if config.get("require_no_truncation", False) and truncated_rows:
+        raise ValueError(f"{truncated_rows} rows exceed max_length={max_length}")
     train_dataset = TokenizedRows(train_rows, tokenizer, max_length)
     eval_max_length = int(config.get("eval_max_length", max_length))
     dev_dataset = TokenizedRows(dev_rows, tokenizer, eval_max_length) if dev_rows else None
@@ -138,19 +207,23 @@ def main() -> None:
     if config.get("gradient_checkpointing", True):
         model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 
-    lora = LoraConfig(
-        task_type="CAUSAL_LM",
-        r=int(config["lora_r"]),
-        lora_alpha=int(config["lora_alpha"]),
-        lora_dropout=float(config["lora_dropout"]),
-        target_modules=list(config["target_modules"]),
-        bias="none",
-    )
-    model = get_peft_model(model, lora)
+    init_adapter_path = config.get("init_adapter_path")
+    if init_adapter_path:
+        model = PeftModel.from_pretrained(model, init_adapter_path, is_trainable=True)
+    else:
+        lora = LoraConfig(
+            task_type="CAUSAL_LM",
+            r=int(config["lora_r"]),
+            lora_alpha=int(config["lora_alpha"]),
+            lora_dropout=float(config["lora_dropout"]),
+            target_modules=list(config["target_modules"]),
+            bias="none",
+        )
+        model = get_peft_model(model, lora)
     trainable, total = model.get_nb_trainable_parameters()
 
     training_args = TrainingArguments(
-        output_dir=str(output_dir / "checkpoints"),
+        output_dir=str(output_dir / f"checkpoints_{config.get('_precision_attempt', str(dtype).split('.')[-1])}"),
         overwrite_output_dir=False,
         num_train_epochs=float(config["num_train_epochs"]),
         per_device_train_batch_size=int(config["batch_size"]),
@@ -164,8 +237,8 @@ def main() -> None:
         logging_steps=int(config["logging_steps"]),
         eval_strategy="steps" if dev_rows else "no",
         eval_steps=int(config["eval_steps"]),
-        save_strategy="steps" if dev_rows else "no",
-        save_steps=int(config["eval_steps"]),
+        save_strategy="steps" if int(config.get("save_steps", config["eval_steps"])) > 0 else "no",
+        save_steps=int(config.get("save_steps", config["eval_steps"])),
         save_total_limit=2,
         load_best_model_at_end=bool(dev_rows),
         metric_for_best_model="eval_loss",
@@ -178,23 +251,60 @@ def main() -> None:
         data_seed=seed,
         use_cpu=device == "cpu",
     )
-    callbacks = [MPSCacheCallback()]
+    memory_callback = MPSCacheCallback()
+    callbacks = [memory_callback]
     if dev_rows and config.get("early_stopping", True):
         callbacks.append(EarlyStoppingCallback(early_stopping_patience=int(config["early_stopping_patience"])))
-    trainer = Trainer(
+    trainer = ChunkedLossTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=dev_dataset,
         data_collator=CompletionOnlyCollator(tokenizer.pad_token_id),
         callbacks=callbacks,
+        loss_chunk_size=int(config.get("loss_chunk_size", 0)),
     )
     started = time.time()
-    result = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
-    eval_metrics = trainer.evaluate() if dev_rows else {}
+    try:
+        result = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+    except RuntimeError as error:
+        should_retry = (
+            device == "mps"
+            and dtype == torch.bfloat16
+            and config.get("precision") == "auto"
+            and config.get("auto_precision_fallback", True)
+            and is_bf16_compatibility_error(error)
+        )
+        if not should_retry:
+            raise
+        import yaml
+
+        attempts_path = output_dir / "precision_attempts.json"
+        attempts = [{"precision": "bf16", "status": "failed_compatibility", "error": str(error)[:1000]}]
+        write_json(attempts_path, attempts)
+        retry_config = dict(config)
+        retry_config.update({"precision": "fp32", "auto_precision_fallback": False, "_precision_attempt": "fp32_retry"})
+        retry_path = output_dir / "resolved_config_fp32_retry.yaml"
+        retry_path.write_text(yaml.safe_dump(retry_config, sort_keys=False), encoding="utf-8")
+        completed = subprocess.run([sys.executable, __file__, "--config", str(retry_path)], check=False)
+        if completed.returncode:
+            raise RuntimeError("automatic FP32 retry failed") from error
+        return
+    eval_metrics = {}
+    if dev_rows:
+        for entry in reversed(trainer.state.log_history):
+            if "eval_loss" in entry:
+                eval_metrics = {key: value for key, value in entry.items() if key.startswith("eval_")}
+                break
+        if not eval_metrics:
+            eval_metrics = trainer.evaluate()
     adapter_dir = output_dir / "adapter"
     trainer.model.save_pretrained(adapter_dir, safe_serialization=True)
     tokenizer.save_pretrained(adapter_dir)
+    attempts_path = output_dir / "precision_attempts.json"
+    attempts = json.loads(attempts_path.read_text(encoding="utf-8")) if attempts_path.exists() else []
+    attempts.append({"precision": "bf16" if dtype == torch.bfloat16 else "fp32", "status": "success"})
+    write_json(attempts_path, attempts)
     metadata = {
         "config": config,
         "device": device,
@@ -208,6 +318,18 @@ def main() -> None:
         "total_parameters": total,
         "trainable_fraction": trainable / total,
         "elapsed_seconds": time.time() - started,
+        "precision_attempts": attempts,
+        "sequence_lengths": {
+            "max_observed": max(token_lengths),
+            "max_length": max_length,
+            "truncated_rows": truncated_rows,
+        },
+        "peak_memory": {
+            "mps_current_allocated_bytes": memory_callback.peak_current_bytes if device == "mps" else None,
+            "mps_driver_allocated_bytes": memory_callback.peak_driver_bytes if device == "mps" else None,
+            "mps_recommended_max_bytes": torch.mps.recommended_max_memory() if device == "mps" else None,
+            "cuda_max_allocated_bytes": torch.cuda.max_memory_allocated() if device == "cuda" else None,
+        },
         "train_metrics": result.metrics,
         "eval_metrics": eval_metrics,
     }

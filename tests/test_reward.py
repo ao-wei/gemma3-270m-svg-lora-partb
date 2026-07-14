@@ -75,6 +75,23 @@ class RewardTests(unittest.TestCase):
         self.assertIn("repeated_identical_elements", result["violations"])
         self.assertLess(result["total"], 0.5)
 
+    def test_global_and_pairwise_spatial_fidelity(self):
+        spatial_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><circle cx="64" cy="128" r="25" fill="red"/><rect x="170" y="100" width="50" height="50" fill="blue"/></svg>'
+        correct = reward("A circle left of a square", spatial_svg)
+        wrong = reward("A square left of a circle", spatial_svg)
+        self.assertGreater(correct["metadata"]["spatial_coverage"], wrong["metadata"]["spatial_coverage"])
+
+    def test_ambiguous_spatial_relation_is_unscorable(self):
+        ambiguous = GOOD.replace("</svg>", '<circle cx="30" cy="30" r="10" fill="red"/></svg>')
+        result = reward("A circle left of a line", ambiguous)
+        self.assertEqual(result["metadata"]["spatial_scorable"], 0)
+
+    def test_unreasonable_stroke_width_is_penalized(self):
+        broken = GOOD.replace('stroke-width="8"', 'stroke-width="80"')
+        result = reward(PROMPT, broken)
+        self.assertIn("unreasonable_stroke_width", result["violations"])
+        self.assertLess(result["components"]["geometry"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

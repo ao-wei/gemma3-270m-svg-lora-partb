@@ -1,0 +1,41 @@
+{
+  "selection_scope": "22-row internal development split only",
+  "validation_set_used": false,
+  "rule": "Exclude fatal_rate > stage1 + 0.10 when fidelity does not improve; rank remaining by total, fidelity, then lower eval_loss; fallback to 5e-5.",
+  "stage1": {
+    "fatal_rate": 0.0,
+    "fidelity": 0.22455695454545455
+  },
+  "candidates": {
+    "E11": {
+      "learning_rate": 5e-05,
+      "total": 0.35,
+      "fidelity": 0.10178231818181818,
+      "fatal_rate": 0.0,
+      "valid_pass_rate": 0.2727272727272727,
+      "quality_pass_rate": 0.0,
+      "eval_loss": 1.0408133268356323,
+      "excluded": false
+    },
+    "E12": {
+      "learning_rate": 0.0001,
+      "total": 0.24926136363636361,
+      "fidelity": 0.016453590909090907,
+      "fatal_rate": 0.3181818181818182,
+      "valid_pass_rate": 0.0,
+      "quality_pass_rate": 0.0,
+      "eval_loss": 0.9875467419624329,
+      "excluded": true
+    }
+  },
+  "selected_experiment": "E11",
+  "selected_learning_rate": 5e-05,
+  "reason": "eligible candidates ranked by total, fidelity, then lower eval loss",
+  "inputs": {
+    "stage1_result": "runs/e10_dev_full.json",
+    "e11_result": "runs/e11_dev_results.json",
+    "e12_result": "runs/e12_dev_results.json",
+    "e11_training": "runs/e11_fullsvg_lr5e5/training_summary.json",
+    "e12_training": "runs/e12_fullsvg_lr1e4/training_summary.json"
+  }
+}

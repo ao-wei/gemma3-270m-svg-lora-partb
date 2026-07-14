@@ -7,3 +7,4 @@ safetensors>=0.5,<1
 cairosvg>=2.7,<3
 reportlab>=4.4,<5
 pillow>=11,<13
+jsonschema>=4.23,<5

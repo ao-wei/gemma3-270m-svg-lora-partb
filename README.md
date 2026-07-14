@@ -1,6 +1,6 @@
 # Gemma 3 270M SVG LoRA - Part B
 
-本仓库包含“详细视觉提示词 -> SVG 徽标”课程作业的完整可复现实验：程序化 reward、Gemma 3 270M LoRA 训练、基座/微调配对评测、逐样本结果和中文报告。
+本仓库包含“详细视觉提示词 -> SVG 徽标”作业的完整可复现实验：程序化 reward、Gemma 3 270M LoRA 训练、基座/微调配对评测、逐样本结果和中文报告。
 
 ## 数据
 
@@ -24,8 +24,9 @@ uv pip install --python .venv/bin/python -r requirements.txt
 .venv/bin/python student_kit/eval_self.py \
   --model gemma3-270m-it --adapter adapter --valid valid.jsonl --output results.json
 .venv/bin/python student_kit/analyze_results.py results.json
-.venv/bin/python student_kit/render_svg.py results.json
-.venv/bin/python student_kit/verify_artifacts.py
+.venv/bin/python student_kit/build_visual_audit.py
+.venv/bin/python student_kit/verify_artifacts.py \
+  --results results.json --repro runs/repro_full.json --adapter adapter
 .venv/bin/python student_kit/build_report.py
 ```
 
@@ -52,16 +53,19 @@ PYTORCH_MPS_LOW_WATERMARK_RATIO=0.9 \
 - `fidelity`：颜色、可验证图元词和构图代理；
 - `components`、`violations`、`metadata`：用于解释每个分数。
 
-Reward v2 要求正确 SVG namespace，检查画布内前景、重复图元、巨型背景和折叠路径。致命 XML/安全错误与背景退化都有总分上限。该 reward 不能替代视觉评审；具体 Goodhart 案例见 `report.md`。
+Reward v3 要求正确 SVG namespace，检查画布内前景、重复图元、巨型背景、折叠路径、异常 stroke，并在元素可唯一匹配时评分全局与成对空间关系。致命 XML/安全错误与背景退化都有总分上限。该 reward 不能替代视觉评审；具体 Goodhart 案例见 `report.md`。
 
 ## 最终配置的边界
 
-最终 adapter 使用 rank 4、学习率 `2e-4`、长度 1024、2 epochs，并把每个训练目标派生为“前三个可见图元”的完整 SVG。这提高了格式稳定性，却会损失细节。最终验证表明 fatal rate 显著下降，但多数可解析输出仍是单色背景退化；本仓库不把它表述为高质量视觉生成成功。
+三图元 adapter 保留为 `adapter_curriculum_stage1/`，仅作预热。最终 `adapter/` 使用 rank 4、学习率 `5e-5`、长度 3584、1 epoch，从 stage1 权重对全部 217 条原始完整 SVG 继续训练，零截断。seed 42 预先指定为主模型；`adapter_seed123/` 仅用于稳健性分析。两个 seed 均明显降低 fatal rate，但 quality pass rate 仍为 0；本仓库不把它表述为高质量视觉生成成功。
 
 ## 主要提交物
 
 - `adapter/`：最终 PEFT LoRA adapter；
+- `adapter_curriculum_stage1/` 与 `adapter_seed123/`：预热与稳健性 adapter；
 - `reward.py`：提交要求的顶层 reward 副本；
 - `train_config.yaml`：最终超参数；
 - `results.json`：17 条验证集的基座/LoRA 逐样本结果；
+- `results_seed123.json` 与 `results_stage1.json`：第二 seed 与预热阶段结果；
+- `render_manifest.json` 与 `manual_review.json`：68 张渲染图的哈希/状态和 17 条人工审计；
 - `report.md` 与 `output/pdf/partB_svg_lora_report.pdf`：分析报告。

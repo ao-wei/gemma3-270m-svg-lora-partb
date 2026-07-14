@@ -15,6 +15,11 @@ def read_yaml(path: str | Path) -> dict[str, Any]:
         return yaml.safe_load(handle)
 
 
+def read_json(path: str | Path) -> Any:
+    with Path(path).open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def write_json(path: str | Path, value: Any) -> None:
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -42,3 +47,16 @@ def device_name() -> str:
     if torch.cuda.is_available():
         return "cuda"
     return "cpu"
+
+
+def is_bf16_compatibility_error(error: BaseException) -> bool:
+    message = str(error).lower()
+    if "out of memory" in message or "allocation" in message:
+        return False
+    patterns = (
+        "mps does not support bfloat16",
+        "not implemented for 'bfloat16'",
+        "does not support dtype bfloat16",
+        "unsupported datatype for constant",
+    )
+    return any(pattern in message for pattern in patterns)
