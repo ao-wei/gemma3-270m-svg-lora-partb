@@ -12,6 +12,9 @@ from pathlib import Path
 import yaml
 
 
+REPO_URL = "https://github.com/ao-wei/gemma3-270m-svg-lora-partb"
+
+
 def read_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -78,7 +81,7 @@ def build_markdown(primary, secondary, stage1, selection, manual, experiments, n
     lines = [
         "# Gemma 3 270M 的 SVG 徽标 LoRA 微调实验",
         "", f"- 姓名：{name}", f"- 学号：{student_id}",
-        "- 作业仓库：https://github.com/ao-wei/gemma3-270m-svg-lora-partb",
+        f"- 作业仓库：{REPO_URL}",
         "- 数据来源：https://github.com/roboticcam/logo-detailed-prompt",
         "", "## 摘要", "",
         "我在 Apple M4 上使用 Transformers 和 PEFT 对 Gemma 3 270M 进行 LoRA 微调。原始训练集有 219 条记录，其中两条只含冲突的 placeholder，因此仅在加载时过滤，不改动源文件。17 条验证数据一直保留到最后，没有用于选择学习率、epoch、随机种子或 checkpoint。前期的三图元模型作为预热；最终模型从该权重出发，用全部 217 条完整 SVG 继续训练一轮。",
@@ -219,7 +222,8 @@ def build_pdf(primary, secondary, stage1, selection, manual, experiments, name, 
         return t
 
     doc = SimpleDocTemplate(str(output), pagesize=A4, leftMargin=17*mm, rightMargin=17*mm, topMargin=16*mm, bottomMargin=18*mm, title="Gemma 3 270M 的 SVG 徽标 LoRA 微调实验")
-    story = [Spacer(1, 30*mm), Paragraph("Gemma 3 270M 的 SVG 徽标<br/>LoRA 微调实验", styles["TitleCJK"]), Spacer(1, 16*mm), table([["姓名", name], ["学号", student_id], ["日期", date.today().isoformat()]], [30*mm, 85*mm], 10), PageBreak()]
+    cover_link = Paragraph(f'<link href="{REPO_URL}" color="#176B87">{REPO_URL}</link>', styles["SmallCJK"])
+    story = [Spacer(1, 30*mm), Paragraph("Gemma 3 270M 的 SVG 徽标<br/>LoRA 微调实验", styles["TitleCJK"]), Spacer(1, 16*mm), table([["姓名", name], ["学号", student_id], ["日期", date.today().isoformat()], ["GitHub", cover_link]], [30*mm, 120*mm], 10), PageBreak()]
     p0, p1 = primary["summary"]["base"], primary["summary"]["tuned"]
     s1, warm, comp = secondary["summary"]["tuned"], stage1["summary"]["tuned"], primary["comparison"]
     story += [Paragraph("摘要", styles["H2CJK"]), Paragraph(f"我先比较了 rank、学习率、序列长度、数据量和派生目标，再从三图元预热权重出发，对全部 217 条完整 SVG 训练。主模型将 fatal rate 从 {p0['fatal_rate']:.1%} 降到 {p1['fatal_rate']:.1%}，但 fidelity 只从 {f(p0['fidelity']['mean'])} 变为 {f(p1['fidelity']['mean'])}，quality pass 仍为 {p1['quality_pass_rate']:.1%}。因此结论是格式稳定性提升，而不是视觉质量改善。", styles["BodyCJK"]),
@@ -263,7 +267,8 @@ def build_pdf(primary, secondary, stage1, selection, manual, experiments, name, 
     story += [Paragraph("7. Goodhart 分析、结论与局限", styles["H2CJK"]), Paragraph(f"逐条检查后，seed42 视觉有效 {manual['summary']['seed42_visually_valid']}/17，背景单图元 {manual['summary']['seed42_background_only']}/17；seed123 视觉有效 {manual['summary']['seed123_visually_valid']}/17，背景单图元 {manual['summary']['seed123_background_only']}/17。许多输出的 XML 完整，但图元位于画布外或只剩巨型圆。代理分因语法改善而上升，视觉质量却没有跟上，这正是本次实验中最明显的 Goodhart 现象。两个 seed 的 quality pass 都为 0，所以我不把总分上升解释为语义生成成功。", styles["BodyCJK"]), Paragraph("270M 模型容量、长 SVG token 序列和纯文本交叉熵是主要限制。更有希望的后续方向包括语法约束解码、结构化 SVG 表示，以及基于栅格图像的感知评测。", styles["BodyCJK"]), Paragraph("8. 复现与验收", styles["H2CJK"])]
     verify = primary["verification"]
     checks = [["验收项", "结果"], ["单元测试", f"{verify['unit_test_count']}/{verify['unit_test_count']}"], ["adapter 新进程加载", str(verify["fresh_process_adapter_load"])], ["results schema v2", str(verify["results_schema_v2_valid"])], ["确定性复验", f"base {verify['deterministic_base_matches']}/17; tuned {verify['deterministic_tuned_matches']}/17"], ["train/valid SHA-256", verify["data_sha256"]["train.jsonl"][:16]+"… / "+verify["data_sha256"]["valid.jsonl"][:16]+"…"], ["adapter SHA-256", verify["adapter_sha256"]["adapter_model.safetensors"]]]
-    story += [table(checks, [55*mm, 118*mm], 7.5), Paragraph("关键产物：results.json、results_seed123.json、results_stage1.json、render_manifest.json、manual_review.json。作业仓库不包含基座模型、.venv、缓存或 checkpoint。", styles["BodyCJK"]), PageBreak(), Paragraph("附录 A：最终 train_config.yaml", styles["H2CJK"]), XPreformatted(Path("train_config.yaml").read_text(encoding="utf-8"), styles["CodeCJK"]), Paragraph("附录 B：Reward、schema 与复现命令", styles["H2CJK"]), Paragraph("结果 schema v2 每条样本保存 prompt、reference_svg、base/tuned raw_text、清理后 svg、reward 分项、violations、passes.valid 和 passes.quality；汇总保存 pass_rate、valid_pass_rate 与 quality_pass_rate。", styles["BodyCJK"])]
+    repo_link = Paragraph(f'GitHub 仓库：<link href="{REPO_URL}" color="#176B87">{REPO_URL}</link>', styles["BodyCJK"])
+    story += [table(checks, [55*mm, 118*mm], 7.5), Paragraph("关键产物：results.json、results_seed123.json、results_stage1.json、render_manifest.json、manual_review.json。作业仓库不包含基座模型、.venv、缓存或 checkpoint。", styles["BodyCJK"]), repo_link, PageBreak(), Paragraph("附录 A：最终 train_config.yaml", styles["H2CJK"]), XPreformatted(Path("train_config.yaml").read_text(encoding="utf-8"), styles["CodeCJK"]), Paragraph("附录 B：Reward、schema 与复现命令", styles["H2CJK"]), Paragraph("结果 schema v2 每条样本保存 prompt、reference_svg、base/tuned raw_text、清理后 svg、reward 分项、violations、passes.valid 和 passes.quality；汇总保存 pass_rate、valid_pass_rate 与 quality_pass_rate。", styles["BodyCJK"])]
     commands = """uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
 .venv/bin/python -m unittest discover -s tests -v
