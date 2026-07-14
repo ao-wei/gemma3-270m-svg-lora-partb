@@ -1,5 +1,15 @@
 {
   "files": [
+    "artifacts/experiment_summaries/e00_default.json",
+    "artifacts/experiment_summaries/e01_rank4.json",
+    "artifacts/experiment_summaries/e02_rank16.json",
+    "artifacts/experiment_summaries/e03_lr1e4.json",
+    "artifacts/experiment_summaries/e04_lr5e4.json",
+    "artifacts/experiment_summaries/e05_length3072.json",
+    "artifacts/experiment_summaries/e06_full_early_final.json",
+    "artifacts/experiment_summaries/e07_seed123_final.json",
+    "artifacts/experiment_summaries/e08_short_curriculum.json",
+    "artifacts/experiment_summaries/e09_simplified_targets.json",
     "artifacts/experiment_summaries/e10_stage1.json",
     "artifacts/experiment_summaries/e11_fullsvg_lr5e5.json",
     "artifacts/experiment_summaries/e12_fullsvg_lr1e4.json",

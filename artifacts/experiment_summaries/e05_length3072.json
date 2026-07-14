@@ -1,0 +1,64 @@
+{
+  "config": {
+    "model_path": "gemma3-270m-it",
+    "train_file": "train.jsonl",
+    "output_dir": "runs/e05_length3072",
+    "seed": 42,
+    "dev_size": 22,
+    "max_train_samples": 110,
+    "drop_uninformative_prompts": true,
+    "max_length": 3072,
+    "precision": "auto",
+    "batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "gradient_checkpointing": true,
+    "num_train_epochs": 1.0,
+    "learning_rate": 0.0002,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.05,
+    "lr_scheduler_type": "cosine",
+    "max_grad_norm": 1.0,
+    "logging_steps": 5,
+    "eval_steps": 14,
+    "early_stopping": true,
+    "early_stopping_patience": 3,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj"
+    ]
+  },
+  "device": "mps",
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "torch_version": "2.13.0",
+  "transformers_version": "4.57.6",
+  "train_rows": 110,
+  "dev_rows": 22,
+  "rejected_source_rows": [
+    79,
+    123
+  ],
+  "trainable_parameters": 737280,
+  "total_parameters": 268835456,
+  "trainable_fraction": 0.002742495394655086,
+  "elapsed_seconds": 632.0660409927368,
+  "train_metrics": {
+    "train_runtime": 600.4434,
+    "train_samples_per_second": 0.183,
+    "train_steps_per_second": 0.023,
+    "total_flos": 93503761459200.0,
+    "train_loss": 1.5484983239855086,
+    "epoch": 1.0
+  },
+  "eval_metrics": {
+    "eval_loss": 1.3901423215866089,
+    "eval_runtime": 29.045,
+    "eval_samples_per_second": 0.757,
+    "eval_steps_per_second": 0.757,
+    "epoch": 1.0
+  }
+}
