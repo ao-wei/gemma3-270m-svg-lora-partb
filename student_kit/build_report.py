@@ -272,7 +272,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 .venv/bin/python student_kit/analyze_results.py results.json
 .venv/bin/python student_kit/build_visual_audit.py
 .venv/bin/python student_kit/verify_artifacts.py --results results.json --repro runs/repro_full.json --adapter adapter"""
-    story += [XPreformatted(commands, styles["CodeCJK"]), Paragraph("身份信息已校验：仅包含姓名与学号，无其他身份字段或占位符。", styles["BodyCJK"])]
+    story += [XPreformatted(commands, styles["CodeCJK"])]
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
 
 
